@@ -236,15 +236,16 @@ struct iked_policy {
 	struct iked_policy		*pol_skip[IKED_SKIP_COUNT];
 
 	uint8_t				 pol_flags;
-#define IKED_POLICY_PASSIVE		 0x00
-#define IKED_POLICY_DEFAULT		 0x01
-#define IKED_POLICY_ACTIVE		 0x02
+#define IKED_POLICY_MODE_MASK		 0x03
+#define IKED_POLICY_MODE_PASSIVE	 0x00
+#define IKED_POLICY_MODE_LAZY		 0x01
+#define IKED_POLICY_MODE_ACTIVE		 0x02
 #define IKED_POLICY_REFCNT		 0x04
 #define IKED_POLICY_QUICK		 0x08
 #define IKED_POLICY_SKIP		 0x10
 #define IKED_POLICY_IPCOMP		 0x20
 #define IKED_POLICY_TRANSPORT		 0x40
-
+#define IKED_POLICY_DEFAULT		 0x80
 	int				 pol_refcnt;
 
 	uint8_t				 pol_certreqtype;

@@ -775,7 +775,8 @@ ikev2_init_ike_sa(struct iked *env, void *arg)
 	struct iked_policy	*pol;
 
 	TAILQ_FOREACH(pol, &env->sc_policies, pol_entry) {
-		if ((pol->pol_flags & IKED_POLICY_ACTIVE) == 0)
+		if ((pol->pol_flags & IKED_POLICY_MODE_MASK) ==
+		    IKED_POLICY_MODE_ACTIVE)
 			continue;
 		if (!TAILQ_EMPTY(&pol->pol_sapeers)) {
 			log_debug("%s: \"%s\" is already active",

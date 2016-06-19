@@ -381,7 +381,7 @@ typedef struct {
 %token	PASSIVE ACTIVE ANY TAG TAP PROTO LOCAL GROUP NAME CONFIG EAP USER
 %token	IKEV1 FLOW SA TCPMD5 TUNNEL TRANSPORT COUPLE DECOUPLE SET
 %token	INCLUDE LIFETIME BYTES INET INET6 QUICK SKIP DEFAULT
-%token	IPCOMP OCSP IKELIFETIME
+%token	IPCOMP OCSP IKELIFETIME LAZY
 %token	<v.string>		STRING
 %token	<v.number>		NUMBER
 %type	<v.string>		string
@@ -802,9 +802,10 @@ ikematch	: /* empty */			{ $$ = 0; }
 		| DEFAULT			{ $$ = IKED_POLICY_DEFAULT; }
 		;
 
-ikemode		: /* empty */			{ $$ = IKED_POLICY_PASSIVE; }
-		| PASSIVE			{ $$ = IKED_POLICY_PASSIVE; }
-		| ACTIVE			{ $$ = IKED_POLICY_ACTIVE; }
+ikemode		: /* empty */		{ $$ = IKED_POLICY_MODE_PASSIVE; }
+		| PASSIVE		{ $$ = IKED_POLICY_MODE_PASSIVE; }
+		| ACTIVE		{ $$ = IKED_POLICY_MODE_ACTIVE; }
+		| LAZY			{ $$ = IKED_POLICY_MODE_LAZY; }
 		;
 
 ipcomp		: /* empty */			{ $$ = 0; }
@@ -1101,6 +1102,7 @@ lookup(char *s)
 		{ "inet",		INET },
 		{ "inet6",		INET6 },
 		{ "ipcomp",		IPCOMP },
+		{ "lazy",		LAZY },
 		{ "lifetime",		LIFETIME },
 		{ "local",		LOCAL },
 		{ "name",		NAME },
@@ -2229,10 +2231,17 @@ print_policy(struct iked_policy *pol)
 	else if (pol->pol_flags & IKED_POLICY_SKIP)
 		print_verbose(" skip");
 
-	if (pol->pol_flags & IKED_POLICY_ACTIVE)
-		print_verbose(" active");
-	else
+	switch (pol->pol_flags & IKED_POLICY_MODE_MASK) {
+	case IKED_POLICY_MODE_PASSIVE:
 		print_verbose(" passive");
+		break;
+	case IKED_POLICY_MODE_LAZY:
+		print_verbose(" lazy");
+		break;
+	case IKED_POLICY_MODE_ACTIVE:
+		print_verbose(" active");
+		break;
+	}
 
 	print_verbose(" %s", print_xf(pol->pol_saproto, 0, saxfs));
 
@@ -2480,7 +2489,8 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 	}
 
 	if (peers == NULL) {
-		if (pol.pol_flags & IKED_POLICY_ACTIVE) {
+		if ((pol.pol_flags & IKED_POLICY_MODE_MASK) ==
+		    IKED_POLICY_MODE_ACTIVE) {
 			yyerror("active mode requires peer specification");
 			return (-1);
 		}
@@ -2522,7 +2532,8 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 		yyerror("could not get local/peer specification");
 		return (-1);
 	}
-	if (pol.pol_flags & IKED_POLICY_ACTIVE) {
+	if ((pol.pol_flags & IKED_POLICY_MODE_MASK) ==
+	    IKED_POLICY_MODE_ACTIVE) {
 		if (ipb == NULL || ipb->netaddress ||
 		    (ipa != NULL && ipa->netaddress)) {
 			yyerror("active mode requires local/peer address");
