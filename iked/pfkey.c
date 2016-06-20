@@ -458,7 +458,6 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 
 #else /* !_OPENBSD_IPSEC_API_VERSION */
 
-	struct iked_sa		*ike_sa = flow->flow_ikesa;
 	struct sadb_msg		 smsg;
 	struct sadb_address	 sa_src, sa_dst;
 	struct sadb_x_ipsecrequest sa_ipsec;
@@ -569,7 +568,7 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 		bzero(&sa_ipsec, sizeof(sa_ipsec));
 		sa_ipsec.sadb_x_ipsecrequest_proto =
 		    satype == SADB_SATYPE_AH ? IPPROTO_AH : IPPROTO_ESP;
-		sa_ipsec.sadb_x_ipsecrequest_mode = (ike_sa->sa_transport) ?
+		sa_ipsec.sadb_x_ipsecrequest_mode = (flow->flow_transport) ?
 		    IPSEC_MODE_TRANSPORT : IPSEC_MODE_TUNNEL;
 		sa_ipsec.sadb_x_ipsecrequest_level =
 		    flow->flow_dir == IPSEC_DIR_INBOUND ?

@@ -779,6 +779,8 @@ ikev2_install_flows(struct iked *env, struct iked_policy *pol)
 			continue;
 
 		flow->flow_saproto = pol->pol_saproto;
+		flow->flow_transport = pol->pol_flags & IKED_POLICY_TRANSPORT;
+		flow->flow_dir = IPSP_DIRECTION_OUT;
 
 		if (pfkey_flow_add(env->sc_pfkey, flow) != 0) {
 			log_debug("%s: failed to load flow %p", __func__,
@@ -2995,6 +2997,7 @@ ikev2_ikesa_enable(struct iked *env, struct iked_sa *sa, struct iked_sa *nsa)
 		TAILQ_INSERT_TAIL(&nsa->sa_flows, flow,
 		    flow_entry);
 		flow->flow_ikesa = nsa;
+		flow->flow_transport = nsa->sa_transport;
 		flow->flow_local = &nsa->sa_local;
 		flow->flow_peer = &nsa->sa_peer;
 	}
@@ -4445,6 +4448,7 @@ ikev2_childsa_negotiate(struct iked *env, struct iked_sa *sa,
 			flowa->flow_local = &sa->sa_local;
 			flowa->flow_peer = &sa->sa_peer;
 			flowa->flow_ikesa = sa;
+			flowa->flow_transport = sa->sa_transport;
 			ikev2_cp_fixaddr(sa, &flow->flow_dst, &flowa->flow_dst);
 
 			if ((flowb = calloc(1, sizeof(*flowb))) == NULL) {
@@ -4709,6 +4713,7 @@ ikev2_ipcomp_enable(struct iked *env, struct iked_sa *sa)
 	flowa->flow_src.addr_mask = flowa->flow_dst.addr_mask =
 	    (sa->sa_local.addr_af == AF_INET) ? 32 : 128;
 	flowa->flow_ikesa = sa;
+	flowa->flow_transport = sa->sa_transport;
 
 	/* skip if flow already exists */
 	TAILQ_FOREACH(flow, &sa->sa_flows, flow_entry) {

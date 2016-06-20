@@ -146,6 +146,7 @@ struct iked_flow {
 	uint8_t				 flow_saproto;
 	uint8_t				 flow_ipproto;
 	uint8_t				 flow_type;
+	uint8_t				 flow_transport;
 	uint32_t			 flow_id;
 
 	struct iked_addr		*flow_local;	/* outer source */
