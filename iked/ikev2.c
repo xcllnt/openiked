@@ -769,22 +769,54 @@ ikev2_init_recv(struct iked *env, struct iked_message *msg,
 	}
 }
 
+static void
+ikev2_install_flows(struct iked *env, struct iked_policy *pol)
+{
+	struct iked_flow *flow;
+
+	RB_FOREACH(flow, iked_flows, &pol->pol_flows) {
+		if (flow->flow_loaded)
+			continue;
+
+		flow->flow_saproto = pol->pol_saproto;
+
+		if (pfkey_flow_add(env->sc_pfkey, flow) != 0) {
+			log_debug("%s: failed to load flow %p", __func__,
+			    flow);
+			continue;
+		}
+
+		RB_INSERT(iked_flows, &env->sc_activeflows, flow);
+		log_debug("%s: loaded flow %p", __func__, flow);
+	}
+}
+
 void
 ikev2_init_ike_sa(struct iked *env, void *arg)
 {
 	struct iked_policy	*pol;
+	u_int mode;
 
 	TAILQ_FOREACH(pol, &env->sc_policies, pol_entry) {
-		if ((pol->pol_flags & IKED_POLICY_MODE_MASK) ==
-		    IKED_POLICY_MODE_PASSIVE)
+		mode = pol->pol_flags & IKED_POLICY_MODE_MASK;
+		if (mode == IKED_POLICY_MODE_PASSIVE)
 			continue;
+
+		log_debug("%s: \"%s\": installing flows", __func__,
+		    pol->pol_name);
+
+		ikev2_install_flows(env, pol);
+
+		if (mode == IKED_POLICY_MODE_LAZY)
+			continue;
+
 		if (!TAILQ_EMPTY(&pol->pol_sapeers)) {
-			log_debug("%s: \"%s\" is already active",
-			    __func__, pol->pol_name);
+			log_debug("%s: \"%s\" is already active", __func__,
+			    pol->pol_name);
 			continue;
 		}
 
-		log_debug("%s: initiating \"%s\"", __func__, pol->pol_name);
+		log_debug("%s: \"%s\": initiating", __func__, pol->pol_name);
 
 		if (ikev2_init_ike_sa_peer(env, pol, &pol->pol_peer))
 			log_debug("%s: failed to initiate with peer %s",
