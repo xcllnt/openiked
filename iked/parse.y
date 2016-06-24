@@ -813,15 +813,18 @@ ipcomp		: /* empty */			{ $$ = 0; }
 
 ikeauth		: /* empty */			{
 			$$.auth_method = IKEV2_AUTH_RSA_SIG;
+			$$.auth_eap = EAP_TYPE_NONE;
 			$$.auth_length = 0;
 		}
 		| RSA				{
 			$$.auth_method = IKEV2_AUTH_RSA_SIG;
+			$$.auth_eap = EAP_TYPE_NONE;
 			$$.auth_length = 0;
 		}
 		| PSK keyspec			{
 			memcpy(&$$, &$2, sizeof($$));
 			$$.auth_method = IKEV2_AUTH_SHARED_KEY_MIC;
+			$$.auth_eap = EAP_TYPE_NONE;
 		}
 		| EAP STRING			{
 			unsigned int i;
