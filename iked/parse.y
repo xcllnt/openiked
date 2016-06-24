@@ -2250,7 +2250,7 @@ print_policy(struct iked_policy *pol)
 		print_verbose(" from %s",
 		    print_host((struct sockaddr *)&flow->flow_src.addr, NULL,
 		    0));
-		if (flow->flow_src.addr_af != AF_UNSPEC &&
+		if (flow->flow_src.addr.ss_family != AF_UNSPEC &&
 		    flow->flow_src.addr_net)
 			print_verbose("/%d", flow->flow_src.addr_mask);
 		if (flow->flow_src.addr_port)
@@ -2260,7 +2260,7 @@ print_policy(struct iked_policy *pol)
 		print_verbose(" to %s",
 		    print_host((struct sockaddr *)&flow->flow_dst.addr, NULL,
 		    0));
-		if (flow->flow_dst.addr_af != AF_UNSPEC &&
+		if (flow->flow_dst.addr.ss_family != AF_UNSPEC &&
 		    flow->flow_dst.addr_net)
 			print_verbose("/%d", flow->flow_dst.addr_mask);
 		if (flow->flow_dst.addr_port)
@@ -2365,7 +2365,7 @@ print_policy(struct iked_policy *pol)
 	for (i = 0; i < pol->pol_ncfg; i++) {
 		cfg = &pol->pol_cfg[i];
 		print_verbose(" config %s %s", print_xf(cfg->cfg_type,
-		    cfg->cfg.address.addr_af, cpxfs),
+		    cfg->cfg.address.addr.ss_family, cpxfs),
 		    print_host((struct sockaddr *)&cfg->cfg.address.addr, NULL,
 		    0));
 	}
@@ -2532,7 +2532,6 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 	if (ipa) {
 		memcpy(&pol.pol_local.addr, &ipa->address,
 		    sizeof(ipa->address));
-		pol.pol_local.addr_af = ipa->address.ss_family;
 		pol.pol_local.addr_mask = ipa->mask;
 		pol.pol_local.addr_net = ipa->netaddress;
 		if (pol.pol_af == AF_UNSPEC)
@@ -2541,7 +2540,6 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 	if (ipb) {
 		memcpy(&pol.pol_peer.addr, &ipb->address,
 		    sizeof(ipb->address));
-		pol.pol_peer.addr_af = ipb->address.ss_family;
 		pol.pol_peer.addr_mask = ipb->mask;
 		pol.pol_peer.addr_net = ipb->netaddress;
 		if (pol.pol_af == AF_UNSPEC)
@@ -2638,14 +2636,12 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 	    ipa = ipa->next, ipb = ipb->next, j++) {
 		memcpy(&flows[j].flow_src.addr, &ipa->address,
 		    sizeof(ipa->address));
-		flows[j].flow_src.addr_af = ipa->address.ss_family;
 		flows[j].flow_src.addr_mask = ipa->mask;
 		flows[j].flow_src.addr_net = ipa->netaddress;
 		flows[j].flow_src.addr_port = hosts->sport;
 
 		memcpy(&flows[j].flow_dst.addr, &ipb->address,
 		    sizeof(ipb->address));
-		flows[j].flow_dst.addr_af = ipb->address.ss_family;
 		flows[j].flow_dst.addr_mask = ipb->mask;
 		flows[j].flow_dst.addr_net = ipb->netaddress;
 		flows[j].flow_dst.addr_port = hosts->dport;
@@ -2668,7 +2664,6 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 		    sizeof(ipa->address));
 		cfg->cfg.address.addr_mask = ipa->mask;
 		cfg->cfg.address.addr_net = ipa->netaddress;
-		cfg->cfg.address.addr_af = ipa->address.ss_family;
 	}
 
 	if (dstid) {
