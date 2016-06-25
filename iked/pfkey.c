@@ -574,13 +574,14 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 		sa_ipsec.sadb_x_ipsecrequest_level =
 		    flow->flow_dir == IPSEC_DIR_INBOUND ?
 		    IPSEC_LEVEL_USE : IPSEC_LEVEL_REQUIRE;
-		sa_ipsec.sadb_x_ipsecrequest_len = sizeof(sa_ipsec) +
-		    SS_LEN(&slocal) + SS_LEN(&speer);
+		sa_ipsec.sadb_x_ipsecrequest_len = sizeof(sa_ipsec);
+		if (sa_ipsec.sadb_x_ipsecrequest_mode == IPSEC_MODE_TUNNEL)
+			sa_ipsec.sadb_x_ipsecrequest_len += SS_LEN(&slocal) +
+			    SS_LEN(&speer);
 		padlen = ROUNDUP(sa_ipsec.sadb_x_ipsecrequest_len) -
 		    sa_ipsec.sadb_x_ipsecrequest_len;
 		sa_ipsec.sadb_x_ipsecrequest_len += padlen;
-		sa_policy.sadb_x_policy_len =
-		    (sizeof(sa_policy) +
+		sa_policy.sadb_x_policy_len = (sizeof(sa_policy) +
 		    sa_ipsec.sadb_x_ipsecrequest_len) / 8;
 		break;
 	}
@@ -626,17 +627,19 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 		iov[iov_cnt].iov_base = &sa_ipsec;
 		iov[iov_cnt].iov_len = sizeof(sa_ipsec);
 		iov_cnt++;
-		iov[iov_cnt].iov_base = &slocal;
-		iov[iov_cnt].iov_len = SS_LEN(&slocal);
-		iov_cnt++;
-		iov[iov_cnt].iov_base = &speer;
-		iov[iov_cnt].iov_len = SS_LEN(&speer);
-		if (padlen) {
+		if (sa_ipsec.sadb_x_ipsecrequest_mode == IPSEC_MODE_TUNNEL) {
+			iov[iov_cnt].iov_base = &slocal;
+			iov[iov_cnt].iov_len = SS_LEN(&slocal);
 			iov_cnt++;
+			iov[iov_cnt].iov_base = &speer;
+			iov[iov_cnt].iov_len = SS_LEN(&speer);
+			iov_cnt++;
+		}
+		if (padlen) {
 			iov[iov_cnt].iov_base = zeropad;
 			iov[iov_cnt].iov_len = padlen;
+			iov_cnt++;
 		}
-		iov_cnt++;
 	}
 
 	ret = -1;
