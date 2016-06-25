@@ -39,15 +39,10 @@ $(iked_MAPS): genmap.sh $(iked_MAPS_IN)
 	@touch $@
 
 $(MANPAGES): $(MANPAGES_IN)
-	if test "$(MANTYPE)" = "cat"; then \
-		manpage=$(srcdir)/`echo $@ | sed 's/\.[1-9]\.out$$/\.0/'`; \
-	else \
-		manpage=$(srcdir)/`echo $@ | sed 's/\.out$$//'`; \
-	fi; \
 	if test "$(MANTYPE)" = "man"; then \
-		$(FIXPATHSCMD) $${manpage} | $(AWK) -f $(top_srcdir)/mdoc2man.awk > $@; \
+		$(FIXPATHSCMD) $< | $(AWK) -f $(top_srcdir)/mdoc2man.awk > $@; \
 	else \
-		$(FIXPATHSCMD) $${manpage} > $@; \
+		$(FIXPATHSCMD) $< > $@; \
 	fi
 
 $(CONFIGFILES): $(CONFIGFILES_IN)
