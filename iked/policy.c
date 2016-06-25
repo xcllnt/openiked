@@ -115,8 +115,10 @@ bool
 isipv4_flow_and_policy(struct iked_addr fsrc, struct iked_addr fdst,
     struct iked_addr psrc, struct iked_addr pdst)
 {
-	return (fsrc.addr_af == AF_INET) && (fdst.addr_af == AF_INET) &&
-	    (psrc.addr_af == AF_INET) && (pdst.addr_af == AF_INET);
+	return (fsrc.addr.ss_family == AF_INET) &&
+	    (fdst.addr.ss_family == AF_INET) &&
+	    (psrc.addr.ss_family == AF_INET) &&
+	    (pdst.addr.ss_family == AF_INET);
 }
 
 /*
@@ -476,7 +478,7 @@ sa_address(struct iked_sa *sa, struct iked_addr *addr,
     struct sockaddr_storage *peer)
 {
 	bzero(addr, sizeof(*addr));
-	addr->addr_af = peer->ss_family;
+	addr->addr.ss_family = peer->ss_family;
 	addr->addr_port = htons(socket_getport((struct sockaddr *)peer));
 	memcpy(&addr->addr, peer, sizeof(*peer));
 	if (socket_af((struct sockaddr *)&addr->addr, addr->addr_port) == -1) {

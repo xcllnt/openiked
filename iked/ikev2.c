@@ -727,7 +727,7 @@ ikev2_init_recv(struct iked *env, struct iked_message *msg,
 
 	if (sa->sa_udpencap && sa->sa_natt == 0 &&
 	    (sock = ikev2_msg_getsocket(env,
-	    sa->sa_local.addr_af, 1)) != NULL) {
+	    sa->sa_local.addr.ss_family, 1)) != NULL) {
 		/*
 		 * Update address information and use the NAT-T
 		 * port and socket, if available.
@@ -850,7 +850,7 @@ ikev2_init_ike_sa_peer(struct iked *env, struct iked_policy *pol,
 	struct iked_socket		*sock;
 	in_port_t			 port;
 
-	if ((sock = ikev2_msg_getsocket(env, peer->addr_af, 0)) == NULL)
+	if ((sock = ikev2_msg_getsocket(env, peer->addr.ss_family, 0)) == NULL)
 		return (-1);
 
 	/* Create a new initiator SA */
@@ -1366,7 +1366,7 @@ ikev2_add_ts_payload(struct ibuf *buf, unsigned int type, struct iked_sa *sa)
 			ts->ts_endport = 0xffff;
 		}
 
-		switch (addr->addr_af) {
+		switch (addr->addr.ss_family) {
 		case AF_INET:
 			ts->ts_type = IKEV2_TS_IPV4_ADDR_RANGE;
 			ts->ts_length = htobe16(sizeof(*ts) + 8);
@@ -1773,7 +1773,7 @@ ikev2_add_cp(struct iked *env, struct iked_sa *sa, struct ibuf *buf)
 			    (ikecfg->cfg_type ==
 			    IKEV2_CFG_INTERNAL_IP4_ADDRESS) &&
 			    sa->sa_addrpool &&
-			    sa->sa_addrpool->addr_af == AF_INET) ?
+			    sa->sa_addrpool->addr.ss_family == AF_INET) ?
 			    (struct sockaddr_in *)&sa->sa_addrpool->addr :
 			    (struct sockaddr_in *)&ikecfg->cfg.address.addr;
 			cfg->cfg_length = htobe16(4);
@@ -1810,7 +1810,7 @@ ikev2_add_cp(struct iked *env, struct iked_sa *sa, struct ibuf *buf)
 			    (ikecfg->cfg_type ==
 			    IKEV2_CFG_INTERNAL_IP6_ADDRESS) &&
 			    sa->sa_addrpool6 &&
-			    sa->sa_addrpool6->addr_af == AF_INET6) ?
+			    sa->sa_addrpool6->addr.ss_family == AF_INET6) ?
 			    (struct sockaddr_in6 *)&sa->sa_addrpool6->addr :
 			    (struct sockaddr_in6 *)&ikecfg->cfg.address.addr;
 			cfg->cfg_length = htobe16(17);
@@ -4711,7 +4711,7 @@ ikev2_ipcomp_enable(struct iked *env, struct iked_sa *sa)
 	socket_setport((struct sockaddr *)&flowa->flow_dst.addr, 0);
 	flowa->flow_src.addr_port = flowa->flow_dst.addr_port = 0;
 	flowa->flow_src.addr_mask = flowa->flow_dst.addr_mask =
-	    (sa->sa_local.addr_af == AF_INET) ? 32 : 128;
+	    (sa->sa_local.addr.ss_family == AF_INET) ? 32 : 128;
 	flowa->flow_ikesa = sa;
 	flowa->flow_transport = sa->sa_transport;
 
@@ -4902,7 +4902,7 @@ ikev2_acquire_sa(struct iked *env, struct iked_flow *acquire)
 	if (!flow) {
 		/* Otherwise try to find a matching policy */
 		bzero(&pol, sizeof(pol));
-		pol.pol_af = acquire->flow_peer->addr_af;
+		pol.pol_af = acquire->flow_peer->addr.ss_family;
 		memcpy(&pol.pol_peer, acquire->flow_peer,
 		    sizeof(pol.pol_peer));
 
@@ -5181,13 +5181,13 @@ ikev2_cp_setaddr(struct iked *env, struct iked_sa *sa, sa_family_t family)
 		if (family == AF_INET &&
 		    ikecfg->cfg_type == IKEV2_CFG_INTERNAL_IP4_ADDRESS &&
 		    ikecfg->cfg.address.addr_mask != 32) {
-			addr.addr_af = AF_INET;
+			addr.addr.ss_family = AF_INET;
 			break;
 		}
 		if (family == AF_INET6 &&
 		    ikecfg->cfg_type == IKEV2_CFG_INTERNAL_IP6_ADDRESS &&
 		    ikecfg->cfg.address.addr_mask != 128) {
-			addr.addr_af = AF_INET6;
+			addr.addr.ss_family = AF_INET6;
 			break;
 		}
 	}
@@ -5205,7 +5205,7 @@ ikev2_cp_setaddr(struct iked *env, struct iked_sa *sa, sa_family_t family)
 		return (-1);
 	}
 
-	switch (addr.addr_af) {
+	switch (addr.addr.ss_family) {
 	case AF_INET:
 		cfg4 = (struct sockaddr_in *)&ikecfg->cfg.address.addr;
 		addr.addr.ss_family = AF_INET;
@@ -5240,7 +5240,7 @@ ikev2_cp_setaddr(struct iked *env, struct iked_sa *sa, sa_family_t family)
 	for (host = start;;) {
 		log_debug("%s: mask %x start %x lower %x host %x upper %x",
 		    __func__, mask, start, lower, host, upper);
-		switch (addr.addr_af) {
+		switch (addr.addr.ss_family) {
 		case AF_INET:
 			in4 = (struct sockaddr_in *)&addr.addr;
 			in4->sin_addr.s_addr =
@@ -5255,9 +5255,9 @@ ikev2_cp_setaddr(struct iked *env, struct iked_sa *sa, sa_family_t family)
 			    sizeof(uint32_t));
 			break;
 		}
-		if ((addr.addr_af == AF_INET &&
+		if ((addr.addr.ss_family == AF_INET &&
 		    !RB_FIND(iked_addrpool, &env->sc_addrpool, &key)) ||
-		    (addr.addr_af == AF_INET6 &&
+		    (addr.addr.ss_family == AF_INET6 &&
 		    !RB_FIND(iked_addrpool6, &env->sc_addrpool6, &key)))
 			break;
 		/* try next address */
@@ -5269,7 +5269,7 @@ ikev2_cp_setaddr(struct iked *env, struct iked_sa *sa, sa_family_t family)
 			return (-1);		/* exhausted */
 	}
 
-	switch (addr.addr_af) {
+	switch (addr.addr.ss_family) {
 	case AF_INET:
 		if (!key.sa_addrpool)
 			return (-1);			/* cannot happen? */
@@ -5303,7 +5303,7 @@ ikev2_cp_fixaddr(struct iked_sa *sa, struct iked_addr *addr,
 	struct sockaddr_in	*in4;
 	struct sockaddr_in6	*in6;
 
-	switch (addr->addr_af) {
+	switch (addr->addr.ss_family) {
 	case AF_INET:
 		if (sa->sa_addrpool == NULL)
 			return (-1);

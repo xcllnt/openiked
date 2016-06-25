@@ -238,7 +238,7 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 	socket_af((struct sockaddr *)&smask, flow->flow_src.addr_port ?
 	    0xffff : 0);
 
-	switch (flow->flow_src.addr_af) {
+	switch (flow->flow_src.addr.ss_family) {
 	case AF_INET:
 		((struct sockaddr_in *)&smask)->sin_addr.s_addr =
 		    prefixlen2mask(flow->flow_src.addr_net ?
@@ -252,10 +252,10 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 		break;
 	default:
 		log_warnx("%s: unsupported address family %d",
-		    __func__, flow->flow_src.addr_af);
+		    __func__, flow->flow_src.addr.ss_family);
 		return (-1);
 	}
-	SET_SS_LEN(smask, SS_LEN(ssrc));
+	SET_SS_LEN(&smask, SS_LEN(&ssrc));
 
 	bzero(&sdst, sizeof(sdst));
 	bzero(&dmask, sizeof(dmask));
@@ -265,7 +265,7 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 	socket_af((struct sockaddr *)&dmask, flow->flow_dst.addr_port ?
 	    0xffff : 0);
 
-	switch (flow->flow_dst.addr_af) {
+	switch (flow->flow_dst.addr.ss_family) {
 	case AF_INET:
 		((struct sockaddr_in *)&dmask)->sin_addr.s_addr =
 		    prefixlen2mask(flow->flow_dst.addr_net ?
@@ -279,7 +279,7 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 		break;
 	default:
 		log_warnx("%s: unsupported address family %d",
-		    __func__, flow->flow_dst.addr_af);
+		    __func__, flow->flow_dst.addr.ss_family);
 		return (-1);
 	}
 	dmask.ss_len = sdst.ss_len;
@@ -478,7 +478,7 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 	sport = flow->flow_src.addr_port;
 	socket_af((struct sockaddr *)&ssrc, sport);
 
-	switch (flow->flow_src.addr_af) {
+	switch (flow->flow_src.addr.ss_family) {
 	case AF_INET:
 		smask = flow->flow_src.addr_net ?
 		    flow->flow_src.addr_mask : 32;
@@ -489,7 +489,7 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 		break;
 	default:
 		log_warnx("%s: unsupported address family %d",
-		    __func__, flow->flow_src.addr_af);
+		    __func__, flow->flow_src.addr.ss_family);
 		return (-1);
 	}
 
@@ -498,7 +498,7 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 	dport = flow->flow_dst.addr_port;
 	socket_af((struct sockaddr *)&sdst, dport);
 
-	switch (flow->flow_dst.addr_af) {
+	switch (flow->flow_dst.addr.ss_family) {
 	case AF_INET:
 		dmask = flow->flow_dst.addr_net ?
 		    flow->flow_dst.addr_mask : 32;
@@ -509,7 +509,7 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 		break;
 	default:
 		log_warnx("%s: unsupported address family %d",
-		    __func__, flow->flow_dst.addr_af);
+		    __func__, flow->flow_dst.addr.ss_family);
 		return (-1);
 	}
 
@@ -517,8 +517,8 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 	bzero(&speer, sizeof(speer));
 	bzero(&zeropad, sizeof(zeropad));
 	if (flow->flow_local == NULL) {
-		slocal.ss_family = flow->flow_src.addr_af;
-		speer.ss_family = flow->flow_dst.addr_af;
+		slocal.ss_family = flow->flow_src.addr.ss_family;
+		speer.ss_family = flow->flow_dst.addr.ss_family;
 	} else if (flow->flow_dir == IPSEC_DIR_INBOUND) {
 		memcpy(&speer, &flow->flow_local->addr, sizeof(slocal));
 		memcpy(&slocal, &flow->flow_peer->addr, sizeof(speer));
@@ -573,13 +573,14 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 		sa_ipsec.sadb_x_ipsecrequest_level =
 		    flow->flow_dir == IPSEC_DIR_INBOUND ?
 		    IPSEC_LEVEL_USE : IPSEC_LEVEL_REQUIRE;
-		sa_ipsec.sadb_x_ipsecrequest_len = sizeof(sa_ipsec) +
-		    SS_LEN(&slocal) + SS_LEN(&speer);
+		sa_ipsec.sadb_x_ipsecrequest_len = sizeof(sa_ipsec);
+		if (sa_ipsec.sadb_x_ipsecrequest_mode == IPSEC_MODE_TUNNEL)
+			sa_ipsec.sadb_x_ipsecrequest_len += SS_LEN(&slocal) +
+			    SS_LEN(&speer);
 		padlen = ROUNDUP(sa_ipsec.sadb_x_ipsecrequest_len) -
 		    sa_ipsec.sadb_x_ipsecrequest_len;
 		sa_ipsec.sadb_x_ipsecrequest_len += padlen;
-		sa_policy.sadb_x_policy_len =
-		    (sizeof(sa_policy) +
+		sa_policy.sadb_x_policy_len = (sizeof(sa_policy) +
 		    sa_ipsec.sadb_x_ipsecrequest_len) / 8;
 		break;
 	}
@@ -625,17 +626,19 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 		iov[iov_cnt].iov_base = &sa_ipsec;
 		iov[iov_cnt].iov_len = sizeof(sa_ipsec);
 		iov_cnt++;
-		iov[iov_cnt].iov_base = &slocal;
-		iov[iov_cnt].iov_len = SS_LEN(&slocal);
-		iov_cnt++;
-		iov[iov_cnt].iov_base = &speer;
-		iov[iov_cnt].iov_len = SS_LEN(&speer);
-		if (padlen) {
+		if (sa_ipsec.sadb_x_ipsecrequest_mode == IPSEC_MODE_TUNNEL) {
+			iov[iov_cnt].iov_base = &slocal;
+			iov[iov_cnt].iov_len = SS_LEN(&slocal);
 			iov_cnt++;
+			iov[iov_cnt].iov_base = &speer;
+			iov[iov_cnt].iov_len = SS_LEN(&speer);
+			iov_cnt++;
+		}
+		if (padlen) {
 			iov[iov_cnt].iov_base = zeropad;
 			iov[iov_cnt].iov_len = padlen;
+			iov_cnt++;
 		}
-		iov_cnt++;
 	}
 
 	ret = -1;
@@ -1486,7 +1489,7 @@ pfkey_flow_add(int fd, struct iked_flow *flow)
 
 	flow->flow_loaded = 1;
 
-	if (flow->flow_dst.addr_af == AF_INET6) {
+	if (flow->flow_dst.addr.ss_family == AF_INET6) {
 		sadb_ipv6refcnt++;
 		if (sadb_ipv6refcnt == 1)
 			return (pfkey_block(fd, AF_INET6, SADB_X_DELFLOW));
@@ -1511,7 +1514,7 @@ pfkey_flow_delete(int fd, struct iked_flow *flow)
 
 	flow->flow_loaded = 0;
 
-	if (flow->flow_dst.addr_af == AF_INET6) {
+	if (flow->flow_dst.addr.ss_family == AF_INET6) {
 		sadb_ipv6refcnt--;
 		if (sadb_ipv6refcnt == 0)
 			return (pfkey_block(fd, AF_INET6, SADB_X_ADDFLOW));
@@ -1536,10 +1539,10 @@ pfkey_block(int fd, int af, unsigned int action)
 	 * the flows by tracking a sadb_ipv6refcnt reference counter.
 	 */
 	bzero(&flow, sizeof(flow));
-	flow.flow_src.addr_af = flow.flow_src.addr.ss_family = af;
+	flow.flow_src.addr.ss_family = af;
 	flow.flow_src.addr_net = 1;
 	socket_af((struct sockaddr *)&flow.flow_src.addr, 0);
-	flow.flow_dst.addr_af = flow.flow_dst.addr.ss_family = af;
+	flow.flow_dst.addr.ss_family = af;
 	flow.flow_dst.addr_net = 1;
 	socket_af((struct sockaddr *)&flow.flow_dst.addr, 0);
 	flow.flow_type = SADB_X_FLOW_TYPE_DENY;
@@ -1919,7 +1922,7 @@ pfkey_process(struct iked *env, struct pfkey_message *pm)
 	speer = (struct sockaddr *)(sa_addr + 1);
 	//speer = (struct sockaddr_storage *)(sa_addr + 1);
 	bzero(&peer, sizeof(peer));
-	peer.addr_af = speer->sa_family;
+	peer.addr.ss_family = speer->sa_family;
 	peer.addr_port = htons(socket_getport(speer));
 	memcpy(&peer.addr, speer, sizeof(*speer));
 	if (socket_af((struct sockaddr *)&peer.addr,
@@ -1968,7 +1971,7 @@ pfkey_process(struct iked *env, struct pfkey_message *pm)
 			goto out;
 		}
 		ssrc = (struct sockaddr *)(sa_addr + 1);
-		flow.flow_src.addr_af = ssrc->sa_family;
+		flow.flow_src.addr.ss_family = ssrc->sa_family;
 		flow.flow_src.addr_port = htons(socket_getport(ssrc));
 		if ((slen = ssrc->sa_len) > sizeof(flow.flow_src.addr)) {
 			log_debug("%s: invalid src address len", __func__);
@@ -1987,7 +1990,7 @@ pfkey_process(struct iked *env, struct pfkey_message *pm)
 			goto out;
 		}
 		sdst = (struct sockaddr *)(sa_addr + 1);
-		flow.flow_dst.addr_af = sdst->sa_family;
+		flow.flow_dst.addr.ss_family = sdst->sa_family;
 		flow.flow_dst.addr_port = htons(socket_getport(sdst));
 		if ((slen = sdst->sa_len) > sizeof(flow.flow_dst.addr)) {
 			log_debug("%s: invalid dst address len", __func__);
@@ -2077,7 +2080,7 @@ out:
 	bzero(&flow, sizeof(flow));
 	flow.flow_peer = &peer;
 	flow.flow_dst = peer;
-	if (flow.flow_dst.addr_af == AF_INET) {
+	if (flow.flow_dst.addr.ss_family == AF_INET) {
 		flow.flow_dst.addr_mask = 32;
 	}
 	if ((sa_pol = pfkey_find_ext(data, len,
@@ -2092,9 +2095,9 @@ out:
 		return 0;
 	}
 	ssrc = (struct sockaddr*)(sa_addr + 1);
-	flow.flow_src.addr_af = ssrc->sa_family;
+	flow.flow_src.addr.ss_family = ssrc->sa_family;
 	flow.flow_src.addr_port = htons(socket_getport(ssrc));
-	if (flow.flow_src.addr_af == AF_INET) {
+	if (flow.flow_src.addr.ss_family == AF_INET) {
 		flow.flow_src.addr_mask = 32;
 	}
 	memcpy(&flow.flow_src.addr, ssrc, sizeof(*ssrc));

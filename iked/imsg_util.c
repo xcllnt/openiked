@@ -53,13 +53,15 @@ ibuf_new(void *data, size_t len)
 {
 	struct ibuf	*buf;
 
-	if ((buf = ibuf_dynamic(len,
-	    IKED_MSGBUF_MAX)) == NULL)
+	if ((buf = ibuf_dynamic(len, IKED_MSGBUF_MAX)) == NULL)
 		return (NULL);
 
 	ibuf_zero(buf);
 
-	if (data == NULL && len) {
+	if (len == 0)
+		return (buf);
+
+	if (data == NULL) {
 		if (ibuf_advance(buf, len) == NULL) {
 			ibuf_free(buf);
 			return (NULL);

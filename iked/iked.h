@@ -129,7 +129,6 @@ struct iked_proposal {
 TAILQ_HEAD(iked_proposals, iked_proposal);
 
 struct iked_addr {
-	int				 addr_af;
 	struct sockaddr_storage		 addr;
 	uint8_t				 addr_mask;
 	int				 addr_net;
