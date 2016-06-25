@@ -787,8 +787,6 @@ ikev2_install_flows(struct iked *env, struct iked_policy *pol)
 			    flow);
 			continue;
 		}
-
-		RB_INSERT(iked_flows, &env->sc_activeflows, flow);
 		log_debug("%s: loaded flow %p", __func__, flow);
 	}
 }
