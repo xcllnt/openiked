@@ -21,15 +21,10 @@ PATHSUBS=	-e 's|/etc/iked/|$(sysconfdir)/iked/|g'			\
 FIXPATHSCMD=	$(SED) $(PATHSUBS)
 
 $(MANPAGES): $(MANPAGES_IN)
-	if test "$(MANTYPE)" = "cat"; then \
-		manpage=$(srcdir)/`echo $@ | sed 's/\.[1-9]\.out$$/\.0/'`; \
-	else \
-		manpage=$(srcdir)/`echo $@ | sed 's/\.out$$//'`; \
-	fi; \
 	if test "$(MANTYPE)" = "man"; then \
-		$(FIXPATHSCMD) $${manpage} | $(AWK) -f $(top_srcdir)/mdoc2man.awk > $@; \
+		$(FIXPATHSCMD) $< | $(AWK) -f $(top_srcdir)/mdoc2man.awk > $@; \
 	else \
-		$(FIXPATHSCMD) $${manpage} > $@; \
+		$(FIXPATHSCMD) $< > $@; \
 	fi
 
 install-exec-hook: $(MANPAGES)
