@@ -781,6 +781,8 @@ ikev2_install_flows(struct iked *env, struct iked_policy *pol)
 		flow->flow_saproto = pol->pol_saproto;
 		flow->flow_transport = pol->pol_flags & IKED_POLICY_TRANSPORT;
 		flow->flow_dir = IPSP_DIRECTION_OUT;
+		flow->flow_local = &pol->pol_local;
+		flow->flow_peer = &pol->pol_peer;
 
 		if (pfkey_flow_add(env->sc_pfkey, flow) != 0) {
 			log_debug("%s: failed to load flow %p", __func__,
