@@ -335,8 +335,7 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 	sa_dmask.sadb_address_len =
 	    (sizeof(sa_dmask) + ROUNDUP(dmask.ss_len)) / 8;
 
-	if (action != SADB_X_DELFLOW && flow->flow_local != NULL &&
-	    flow->flow_ikesa != NULL) {
+	if (action != SADB_X_DELFLOW && flow->flow_local != NULL) {
 		/* local address */
 		bzero(&sa_local, sizeof(sa_local));
 		sa_local.sadb_address_exttype = SADB_EXT_ADDRESS_SRC;
@@ -349,13 +348,15 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 		sa_peer.sadb_address_len =
 		    (sizeof(sa_peer) + ROUNDUP(speer.ss_len)) / 8;
 
-		/* local id */
-		sa_srcid = pfkey_id2ident(IKESA_SRCID(flow->flow_ikesa),
-		    SADB_EXT_IDENTITY_SRC);
+		if (flow->flow_ikesa != NULL) {
+			/* local id */
+			sa_srcid = pfkey_id2ident(IKESA_SRCID(flow->flow_ikesa),
+			    SADB_EXT_IDENTITY_SRC);
 
-		/* peer id */
-		sa_dstid = pfkey_id2ident(IKESA_DSTID(flow->flow_ikesa),
-		    SADB_EXT_IDENTITY_DST);
+			/* peer id */
+			sa_dstid = pfkey_id2ident(IKESA_DSTID(flow->flow_ikesa),
+			    SADB_EXT_IDENTITY_DST);
+		}
 	}
 
 	iov_cnt = 0;
