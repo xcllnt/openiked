@@ -22,9 +22,10 @@ FIXPATHSCMD=	$(SED) $(PATHSUBS)
 
 $(MANPAGES): $(MANPAGES_IN)
 	if test "$(MANTYPE)" = "man"; then \
-		$(FIXPATHSCMD) $< | $(AWK) -f $(top_srcdir)/mdoc2man.awk > $@; \
+		$(FIXPATHSCMD) $(MANPAGES_IN) | \
+		    $(AWK) -f $(top_srcdir)/mdoc2man.awk > $@; \
 	else \
-		$(FIXPATHSCMD) $< > $@; \
+		$(FIXPATHSCMD) $(MANPAGES_IN) > $@; \
 	fi
 
 install-exec-hook: $(MANPAGES)
