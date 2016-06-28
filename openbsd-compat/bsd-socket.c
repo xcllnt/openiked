@@ -99,18 +99,19 @@ bsd_accept4(int s, struct sockaddr *addr, socklen_t *addrlen, int flags)
 {
 #if !defined(SOCK_SETFLAGS) && defined(HAVE_ACCEPT4)
 	return (accept4(s, addr, addrlen, flags));
-#else
-	int	 c;
-	int	 setfl = flags & SOCK_SETFLAGS;
+#elif defined(SOCK_SETFLAGS)
+	int	 c, setfl;
 
+	setfl = flags & SOCK_SETFLAGS;
+	flags &= ~SOCK_SETFLAGS;
 	if ((c = accept(s, addr, addrlen)) == -1)
 		return (-1);
-
 	if (bsd_socket_setflags(c, setfl) == -1) {
 		close(c);
 		return (-1);
 	}
-
 	return (c);
+#elif defined(__NetBSD__)
+	return (paccept(s, addr, addrlen, NULL, flags));
 #endif
 }
