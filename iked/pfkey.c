@@ -1899,41 +1899,42 @@ pfkey_process(struct iked *env, struct pfkey_message *pm)
 	size_t			 slen;
 #else
 	struct iked_addr	 peer;
-	struct sadb_address *sa_addr;
-	struct sockaddr *speer;
+	struct sadb_address	*sa_addr;
+	struct sockaddr		*speer;
 	struct sadb_x_policy	*sa_pol;
-	struct iked_flow flow;
-	struct sockaddr *ssrc;
+	struct iked_flow	 flow;
+	struct sockaddr		*ssrc;
 #endif
 	u_int8_t		*data = pm->pm_data;
-	ssize_t		 len = pm->pm_length;
+	ssize_t			 len = pm->pm_length;
 
 	if (!env || !data || !len)
-	return 0;
+		return 0;
 
 	hdr = (struct sadb_msg *)data;
 
 	switch (hdr->sadb_msg_type) {
 	case SADB_ACQUIRE:
-	/* Get peer from the acquire message */
-	if ((sa_addr = pfkey_find_ext(data, len,
-		SADB_EXT_ADDRESS_DST)) == NULL) {
-		log_debug("%s: no peer address", __func__);
-		return 0;
-	}
-	speer = (struct sockaddr *)(sa_addr + 1);
-	//speer = (struct sockaddr_storage *)(sa_addr + 1);
-	bzero(&peer, sizeof(peer));
-	peer.addr.ss_family = speer->sa_family;
-	peer.addr_port = htons(socket_getport(speer));
-	memcpy(&peer.addr, speer, sizeof(*speer));
-	if (socket_af((struct sockaddr *)&peer.addr,
-		peer.addr_port) == -1) {
-		log_debug("%s: invalid address", __func__);
-		return 0;
-	}
-	log_debug("%s: acquire request (peer %s)", __func__,
-		print_host(speer, NULL, 0));
+		/* Get peer from the acquire message */
+		sa_addr = pfkey_find_ext(data, len, SADB_EXT_ADDRESS_DST);
+		if (sa_addr == NULL) {
+			log_debug("%s: no peer address", __func__);
+			return 0;
+		}
+		speer = (struct sockaddr *)(sa_addr + 1);
+		bzero(&peer, sizeof(peer));
+		memcpy(&peer.addr, speer, sizeof(*speer));
+		peer.addr_port = htons(socket_getport(speer));
+		if (socket_af((struct sockaddr *)&peer.addr,
+		    peer.addr_port) == -1) {
+			log_debug("%s: invalid address", __func__);
+			return 0;
+		}
+		log_debug("%s: acquire request (peer %s)", __func__,
+		    print_host(speer, NULL, 0));
+
+		memset(&flow, 0, sizeof(flow));
+		flow.flow_peer = &peer;
 
 #if defined(_OPENBSD_IPSEC_API_VERSION)
 		sd = env->sc_pfkey;
@@ -2074,85 +2075,89 @@ out:
 		if (errmsg)
 			log_warnx("%s: %s wasn't found", __func__, errmsg);
 		free(reply);
+
 #elif defined(SADB_X_EXT_POLICY)
-	/*
-	 * On an upcall from the kernel, reconstruct iked_flow with src
-	 * and dest in upcall message. Then proceed onto establish SA
-	 */
-	bzero(&flow, sizeof(flow));
-	flow.flow_peer = &peer;
-	flow.flow_dst = peer;
-	if (flow.flow_dst.addr.ss_family == AF_INET) {
-		flow.flow_dst.addr_mask = 32;
-	}
-	if ((sa_pol = pfkey_find_ext(data, len,
-		SADB_X_EXT_POLICY)) == NULL) {
-		log_debug("%s: no policy extension", __func__);
-		return 0;
-	}
 
-	if ((sa_addr = pfkey_find_ext(data, len,
-		SADB_EXT_ADDRESS_SRC)) == NULL) {
-		log_debug("%s: no src in ext_policy upcall", __func__);
-		return 0;
-	}
-	ssrc = (struct sockaddr*)(sa_addr + 1);
-	flow.flow_src.addr.ss_family = ssrc->sa_family;
-	flow.flow_src.addr_port = htons(socket_getport(ssrc));
-	if (flow.flow_src.addr.ss_family == AF_INET) {
-		flow.flow_src.addr_mask = 32;
-	}
-	memcpy(&flow.flow_src.addr, ssrc, sizeof(*ssrc));
-	if (socket_af((struct sockaddr *)&flow.flow_src.addr,
-		flow.flow_src.addr_port) == -1) {
-		log_debug("%s: invalid address", __func__);
-		return 0;
-	}
+		/*
+		 * On an upcall from the kernel, reconstruct iked_flow with
+		 * src and dest from upcall message. Then proceed onto
+		 * establishing the SA.
+		 */
+		flow.flow_dst = peer;
+		if (flow.flow_dst.addr.ss_family == AF_INET)
+			flow.flow_dst.addr_mask = 32;
 
-	log_debug("%s: flow %s from to %s ", __func__,
-		print_host((struct sockaddr*)&(flow.flow_src.addr), NULL, 0),
-		print_host((struct sockaddr*)&(flow.flow_dst.addr), NULL, 0));
-	ikev2_acquire_sa(env, &flow);
+		sa_pol = pfkey_find_ext(data, len, SADB_X_EXT_POLICY);
+		if (sa_pol == NULL) {
+			log_debug("%s: no policy extension", __func__);
+			return 0;
+		}
+
+		sa_addr = pfkey_find_ext(data, len, SADB_EXT_ADDRESS_SRC);
+		if (sa_addr == NULL) {
+			log_debug("%s: no src in ext_policy upcall", __func__);
+			return 0;
+		}
+		ssrc = (struct sockaddr*)(sa_addr + 1);
+		memcpy(&flow.flow_src.addr, ssrc, sizeof(*ssrc));
+		flow.flow_src.addr_port = htons(socket_getport(ssrc));
+		if (flow.flow_src.addr.ss_family == AF_INET)
+			flow.flow_src.addr_mask = 32;
+
+		if (socket_af((struct sockaddr *)&flow.flow_src.addr,
+		    flow.flow_src.addr_port) == -1) {
+			log_debug("%s: invalid address", __func__);
+			return 0;
+		}
+
+		log_debug("%s: flow %s from to %s ", __func__,
+		    print_host((void *)&flow.flow_src.addr, NULL, 0),
+		    print_host((void *)&flow.flow_dst.addr, NULL, 0));
+
+		ikev2_acquire_sa(env, &flow);
+
 #else
 #warning PFKEYv2 SADB_ACQUIRE not implemented
-	log_debug("%s: SADB_ACQUIRE not yet supported here, ignored",
-		__func__);
+		log_debug("%s: SADB_ACQUIRE not yet supported here, ignored",
+		    __func__);
 #endif
-	break;
+		break;
 
 	case SADB_EXPIRE:
-	if ((sa = pfkey_find_ext(data, len, SADB_EXT_SA)) == NULL) {
-		log_warnx("%s: SA extension wasn't found", __func__);
-		return 0;
-	}
-	if ((sa_ltime = pfkey_find_ext(data, len,
-		SADB_EXT_LIFETIME_SOFT)) == NULL &&
-		(sa_ltime = pfkey_find_ext(data, len,
-		SADB_EXT_LIFETIME_HARD)) == NULL) {
-		log_warnx("%s: lifetime extension wasn't found",
-		__func__);
-		return 0;
-	}
-	spi.spi = ntohl(sa->sadb_sa_spi);
-	spi.spi_size = 4;
-	switch (hdr->sadb_msg_satype) {
-	case SADB_SATYPE_AH:
-		spi.spi_protoid = IKEV2_SAPROTO_AH;
-		break;
-	case SADB_SATYPE_ESP:
-		spi.spi_protoid = IKEV2_SAPROTO_ESP;
-		break;
-	default:
-		log_warnx("%s: usupported SA type %d spi %s",
-		__func__, hdr->sadb_msg_satype,
-		print_spi(spi.spi, spi.spi_size));
-		return 0;
-	}
+		if ((sa = pfkey_find_ext(data, len, SADB_EXT_SA)) == NULL) {
+			log_warnx("%s: SA extension wasn't found", __func__);
+			return 0;
+		}
+		sa_ltime = pfkey_find_ext(data, len, SADB_EXT_LIFETIME_SOFT);
+		if (sa_ltime == NULL) {
+			sa_ltime = pfkey_find_ext(data, len,
+			    SADB_EXT_LIFETIME_HARD);
+			if (sa_ltime == NULL) {
+				log_warnx("%s: lifetime extension not found",
+				    __func__);
+				return 0;
+			}
+		}
+		spi.spi = ntohl(sa->sadb_sa_spi);
+		spi.spi_size = 4;
+		switch (hdr->sadb_msg_satype) {
+		case SADB_SATYPE_AH:
+			spi.spi_protoid = IKEV2_SAPROTO_AH;
+			break;
+		case SADB_SATYPE_ESP:
+			spi.spi_protoid = IKEV2_SAPROTO_ESP;
+			break;
+		default:
+			log_warnx("%s: usupported SA type %d spi %s", __func__,
+			    hdr->sadb_msg_satype,
+			    print_spi(spi.spi, spi.spi_size));
+			return 0;
+		}
 
-	log_debug("%s: SA %s is expired, pending %s", __func__,
-		print_spi(spi.spi, spi.spi_size),
-		sa_ltime->sadb_lifetime_exttype == SADB_EXT_LIFETIME_SOFT ?
-		"rekeying" : "deletion");
+		log_debug("%s: SA %s is expired, pending %s", __func__,
+		    print_spi(spi.spi, spi.spi_size),
+		    sa_ltime->sadb_lifetime_exttype == SADB_EXT_LIFETIME_SOFT ?
+		    "rekeying" : "deletion");
 
 		if (sa_ltime->sadb_lifetime_exttype == SADB_EXT_LIFETIME_SOFT)
 			ikev2_rekey_sa(env, &spi);
