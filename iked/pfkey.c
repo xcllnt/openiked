@@ -335,7 +335,8 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 	sa_dmask.sadb_address_len =
 	    (sizeof(sa_dmask) + ROUNDUP(dmask.ss_len)) / 8;
 
-	if (action != SADB_X_DELFLOW && flow->flow_local != NULL) {
+	if (action != SADB_X_DELFLOW && flow->flow_local != NULL &&
+	    flow->flow_ikesa != NULL) {
 		/* local address */
 		bzero(&sa_local, sizeof(sa_local));
 		sa_local.sadb_address_exttype = SADB_EXT_ADDRESS_SRC;
@@ -729,7 +730,7 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 	sadb.sadb_sa_replay = 64;
 
 #if defined(_OPENBSD_IPSEC_API_VERSION)
-	if (!sa->csa_ikesa->sa_transport)
+	if (!sa->csa_transport)
 		sadb.sadb_sa_flags |= SADB_X_SAFLAGS_TUNNEL;
 
 	if (sa->csa_esn)
