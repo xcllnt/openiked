@@ -4460,6 +4460,7 @@ ikev2_childsa_negotiate(struct iked *env, struct iked_sa *sa,
 			memcpy(flowb, flowa, sizeof(*flow));
 
 			flowb->flow_dir = IPSP_DIRECTION_IN;
+			flowb->flow_loaded = 0;
 			memcpy(&flowb->flow_src, &flow->flow_dst,
 			    sizeof(flow->flow_dst));
 			memcpy(&flowb->flow_dst, &flow->flow_src,
