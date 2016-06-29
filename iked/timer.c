@@ -37,6 +37,10 @@ void
 timer_set(struct iked *env, struct iked_timer *tmr,
     void (*cb)(struct iked *, void *), void *arg)
 {
+
+	if (evtimer_initialized(&tmr->tmr_ev))
+		evtimer_del(&tmr->tmr_ev);
+
 	tmr->tmr_env = env;
 	tmr->tmr_cb = cb;
 	tmr->tmr_cbarg = arg;
