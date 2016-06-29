@@ -14,8 +14,10 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#if defined(SOCK_SETFLAGS)
+#include <sys/socket.h>
 #include <unistd.h>
+
+#if defined(SOCK_SETFLAGS)
 #include <fcntl.h>
 
 static int
