@@ -851,7 +851,7 @@ byte_spec	: NUMBER			{
 			$$ = $1;
 		}
 		| STRING			{
-			uint64_t	 bytes = 0;
+			unsigned long long bytes = 0;
 			char		 unit = 0;
 
 			if (sscanf($1, "%llu%c", &bytes, &unit) != 2) {
@@ -880,7 +880,7 @@ time_spec	: NUMBER			{
 			$$ = $1;
 		}
 		| STRING			{
-			uint64_t	 seconds = 0;
+			unsigned long long seconds = 0;
 			char		 unit = 0;
 
 			if (sscanf($1, "%llu%c", &seconds, &unit) != 2) {
@@ -2358,7 +2358,8 @@ print_policy(struct iked_policy *pol)
 		print_verbose(" ikelifetime %u", pol->pol_rekey);
 
 	print_verbose(" lifetime %llu bytes %llu",
-	    pol->pol_lifetime.lt_seconds, pol->pol_lifetime.lt_bytes);
+	    (unsigned long long)pol->pol_lifetime.lt_seconds,
+	    (unsigned long long)pol->pol_lifetime.lt_bytes);
 
 	if (pol->pol_auth.auth_method == IKEV2_AUTH_SHARED_KEY_MIC) {
 			print_verbose(" psk 0x");
