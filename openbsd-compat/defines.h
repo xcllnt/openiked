@@ -66,8 +66,8 @@ enum
 #endif
 
 #if defined(HAVE_NET_PFKEYV2_H) || defined(HAVE_LINUX_PFKEYV2_H)
-#if !defined(SADB_X_ADDFLOW) && defined(SADB_X_SPDADD)
-#define SADB_X_ADDFLOW	SADB_X_SPDADD
+#if !defined(SADB_X_ADDFLOW) && defined(SADB_X_SPDUPDATE)
+#define SADB_X_ADDFLOW	SADB_X_SPDUPDATE
 #endif
 #if !defined(SADB_X_DELFLOW) && defined(SADB_X_SPDDELETE)
 #define SADB_X_DELFLOW	SADB_X_SPDDELETE
