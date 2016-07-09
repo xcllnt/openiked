@@ -20,6 +20,7 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -38,13 +39,17 @@ timer_set(struct iked *env, struct iked_timer *tmr,
     void (*cb)(struct iked *, void *), void *arg)
 {
 
-	if (evtimer_initialized(&tmr->tmr_ev))
-		evtimer_del(&tmr->tmr_ev);
+	if (tmr->tmr_ev != NULL) {
+		event_free(tmr->tmr_ev);
+		tmr->tmr_ev = NULL;
+	}
 
 	tmr->tmr_env = env;
 	tmr->tmr_cb = cb;
 	tmr->tmr_cbarg = arg;
-	evtimer_set(&tmr->tmr_ev, timer_callback, tmr);
+	assert(tmr->tmr_ev == NULL);
+	tmr->tmr_ev = evtimer_new(env->sc_ps.ps_evbase, timer_callback, tmr);
+	assert(tmr->tmr_ev != NULL);
 }
 
 void
@@ -52,19 +57,17 @@ timer_add(struct iked *env, struct iked_timer *tmr, int timeout)
 {
 	struct timeval		 tv = { timeout };
 
-	if (evtimer_initialized(&tmr->tmr_ev) &&
-	    evtimer_pending(&tmr->tmr_ev, NULL))
-		evtimer_del(&tmr->tmr_ev);
-
-	evtimer_add(&tmr->tmr_ev, &tv);
+	assert(tmr->tmr_ev != NULL);
+	evtimer_del(tmr->tmr_ev);
+	evtimer_add(tmr->tmr_ev, &tv);
 }
 
 void
 timer_del(struct iked *env, struct iked_timer *tmr)
 {
-	if (tmr->tmr_env == env && tmr->tmr_cb &&
-	    evtimer_initialized(&tmr->tmr_ev))
-		evtimer_del(&tmr->tmr_ev);
+
+	if (tmr->tmr_env == env && tmr->tmr_cb && tmr->tmr_ev != NULL)
+		evtimer_del(tmr->tmr_ev);
 }
 
 void

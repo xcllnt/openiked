@@ -21,6 +21,7 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 
+#include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -560,9 +561,11 @@ config_getsocket(struct iked *env, struct imsg *imsg,
 	    IKED_NATT_PORT)
 		*nptr = sock;
 
-	event_set(&sock->sock_ev, sock->sock_fd,
+	assert(sock->sock_ev == NULL);
+	sock->sock_ev = event_new(env->sc_ps.ps_evbase, sock->sock_fd,
 	    EV_READ|EV_PERSIST, cb, sock);
-	event_add(&sock->sock_ev, NULL);
+	assert(sock->sock_ev != NULL);
+	event_add(sock->sock_ev, NULL);
 
 	return (0);
 }

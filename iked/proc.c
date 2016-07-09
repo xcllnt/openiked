@@ -22,6 +22,7 @@
 #include <sys/socket.h>
 #include <sys/wait.h>
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -247,12 +248,14 @@ proc_listen(struct privsep *ps, struct privsep_proc *procs, size_t nproc)
 			ps->ps_ievs[dst][n].data = &ps->ps_ievs[dst][n];
 			procs[i].p_instance = n;
 
-			event_set(&(ps->ps_ievs[dst][n].ev),
+			assert(ps->ps_ievs[dst][n].ev == NULL);
+			ps->ps_ievs[dst][n].ev = event_new(ps->ps_evbase,
 			    ps->ps_ievs[dst][n].ibuf.fd,
 			    ps->ps_ievs[dst][n].events,
 			    ps->ps_ievs[dst][n].handler,
 			    ps->ps_ievs[dst][n].data);
-			event_add(&(ps->ps_ievs[dst][n].ev), NULL);
+			assert(ps->ps_ievs[dst][n].ev != NULL);
+			event_add(ps->ps_ievs[dst][n].ev, NULL);
 		}
 	}
 }
@@ -277,7 +280,7 @@ proc_close(struct privsep *ps)
 				continue;
 
 			/* Cancel the fd, close and invalidate the fd */
-			event_del(&(ps->ps_ievs[dst][n].ev));
+			event_free(ps->ps_ievs[dst][n].ev);
 			imsg_clear(&(ps->ps_ievs[dst][n].ibuf));
 			close(pp->pp_pipes[dst][n]);
 			pp->pp_pipes[dst][n] = -1;
@@ -402,21 +405,32 @@ proc_run(struct privsep *ps, struct privsep_proc *p,
 	    ps->ps_instance + 1, ps->ps_instances[p->p_id], getpid());
 #endif
 
-	event_init();
+	event_reinit(ps->ps_evbase);
 
-	signal_set(&ps->ps_evsigint, SIGINT, proc_sig_handler, p);
-	signal_set(&ps->ps_evsigterm, SIGTERM, proc_sig_handler, p);
-	signal_set(&ps->ps_evsigchld, SIGCHLD, proc_sig_handler, p);
-	signal_set(&ps->ps_evsighup, SIGHUP, proc_sig_handler, p);
-	signal_set(&ps->ps_evsigpipe, SIGPIPE, proc_sig_handler, p);
-	signal_set(&ps->ps_evsigusr1, SIGUSR1, proc_sig_handler, p);
-
-	signal_add(&ps->ps_evsigint, NULL);
-	signal_add(&ps->ps_evsigterm, NULL);
-	signal_add(&ps->ps_evsigchld, NULL);
-	signal_add(&ps->ps_evsighup, NULL);
-	signal_add(&ps->ps_evsigpipe, NULL);
-	signal_add(&ps->ps_evsigusr1, NULL);
+	event_free(ps->ps_evsigint);
+	ps->ps_evsigint = evsignal_new(ps->ps_evbase, SIGINT,
+	    proc_sig_handler, p);
+	evsignal_add(ps->ps_evsigint, NULL);
+	event_free(ps->ps_evsigterm);
+	ps->ps_evsigterm = evsignal_new(ps->ps_evbase, SIGTERM,
+	    proc_sig_handler, p);
+	evsignal_add(ps->ps_evsigterm, NULL);
+	event_free(ps->ps_evsigchld);
+	ps->ps_evsigchld = evsignal_new(ps->ps_evbase, SIGCHLD,
+	    proc_sig_handler, p);
+	evsignal_add(ps->ps_evsigchld, NULL);
+	event_free(ps->ps_evsighup);
+	ps->ps_evsighup = evsignal_new(ps->ps_evbase, SIGHUP,
+	    proc_sig_handler, p);
+	evsignal_add(ps->ps_evsighup, NULL);
+	event_free(ps->ps_evsigpipe);
+	ps->ps_evsigpipe = evsignal_new(ps->ps_evbase, SIGPIPE,
+	    proc_sig_handler, p);
+	evsignal_add(ps->ps_evsigpipe, NULL);
+	event_free(ps->ps_evsigusr1);
+	ps->ps_evsigusr1 = evsignal_new(ps->ps_evbase, SIGUSR1,
+	    proc_sig_handler, p);
+	evsignal_add(ps->ps_evsigusr1, NULL);
 
 #ifndef LIBRESSL_VERSION_NUMBER
 	arc4random_buf(seed, sizeof(seed));
@@ -426,17 +440,17 @@ proc_run(struct privsep *ps, struct privsep_proc *p,
 
 	if (p->p_id == PROC_CONTROL && ps->ps_instance == 0) {
 		TAILQ_INIT(&ctl_conns);
-		if (control_listen(&ps->ps_csock) == -1)
+		if (control_listen(ps, &ps->ps_csock) == -1)
 			fatalx(__func__);
 		TAILQ_FOREACH(rcs, &ps->ps_rcsocks, cs_entry)
-			if (control_listen(rcs) == -1)
+			if (control_listen(ps, rcs) == -1)
 				fatalx(__func__);
 	}
 
 	if (run != NULL)
 		run(ps, p, arg);
 
-	event_dispatch();
+	event_base_dispatch(ps->ps_evbase);
 
 	proc_shutdown(p);
 
@@ -463,8 +477,8 @@ proc_dispatch(int fd, short event, void *arg)
 			fatal(__func__);
 		if (n == 0) {
 			/* this pipe is dead, so remove the event handler */
-			event_del(&iev->ev);
-			event_loopexit(NULL);
+			event_del(iev->ev);
+			event_base_loopexit(ps->ps_evbase, NULL);
 			return;
 		}
 	}
@@ -539,9 +553,16 @@ imsg_event_add(struct imsgev *iev)
 	if (iev->ibuf.w.queued)
 		iev->events |= EV_WRITE;
 
-	event_del(&iev->ev);
-	event_set(&iev->ev, iev->ibuf.fd, iev->events, iev->handler, iev->data);
-	event_add(&iev->ev, NULL);
+	if (iev->ev != NULL) {
+		event_del(iev->ev);
+		event_assign(iev->ev, iev->proc->p_ps->ps_evbase, iev->ibuf.fd,
+		    iev->events, iev->handler, iev->data);
+	} else {
+		iev->ev = event_new(iev->proc->p_ps->ps_evbase, iev->ibuf.fd,
+		    iev->events, iev->handler, iev->data);
+		assert(iev->ev != NULL);
+	}
+	event_add(iev->ev, NULL);
 }
 
 int

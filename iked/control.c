@@ -22,9 +22,9 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 
-
 #include <net/if.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <event.h>
 #include <fcntl.h>
@@ -133,7 +133,7 @@ control_init(struct privsep *ps, struct control_sock *cs)
 }
 
 int
-control_listen(struct control_sock *cs)
+control_listen(struct privsep *ps, struct control_sock *cs)
 {
 	if (cs->cs_name == NULL)
 		return (0);
@@ -143,10 +143,15 @@ control_listen(struct control_sock *cs)
 		return (-1);
 	}
 
-	event_set(&cs->cs_ev, cs->cs_fd, EV_READ,
+	assert(cs->cs_ev == NULL);
+	cs->cs_ev = event_new(ps->ps_evbase, cs->cs_fd, EV_READ,
 	    control_accept, cs);
-	event_add(&cs->cs_ev, NULL);
-	evtimer_set(&cs->cs_evt, control_accept, cs);
+	assert(cs->cs_ev != NULL);
+	event_add(cs->cs_ev, NULL);
+
+	assert(cs->cs_evt == NULL);
+	cs->cs_evt = evtimer_new(ps->ps_evbase, control_accept, cs);
+	assert(cs->cs_evt != NULL);
 
 	return (0);
 }
@@ -156,8 +161,8 @@ control_cleanup(struct control_sock *cs)
 {
 	if (cs->cs_name == NULL)
 		return;
-	event_del(&cs->cs_ev);
-	event_del(&cs->cs_evt);
+	event_free(cs->cs_ev);
+	event_free(cs->cs_evt);
 	(void)unlink(cs->cs_name);
 }
 
@@ -171,7 +176,7 @@ control_accept(int listenfd, short event, void *arg)
 	struct sockaddr_un	 sun;
 	struct ctl_conn		*c;
 
-	event_add(&cs->cs_ev, NULL);
+	event_add(cs->cs_ev, NULL);
 	if ((event & EV_TIMEOUT))
 		return;
 
@@ -185,8 +190,8 @@ control_accept(int listenfd, short event, void *arg)
 		if (errno == ENFILE || errno == EMFILE) {
 			struct timeval evtpause = { 1, 0 };
 
-			event_del(&cs->cs_ev);
-			evtimer_add(&cs->cs_evt, &evtpause);
+			event_del(cs->cs_ev);
+			evtimer_add(cs->cs_evt, &evtpause);
 		} else if (errno != EWOULDBLOCK && errno != EINTR &&
 		    errno != ECONNABORTED)
 			log_warn("%s: accept", __func__);
@@ -203,9 +208,11 @@ control_accept(int listenfd, short event, void *arg)
 	c->iev.handler = control_dispatch_imsg;
 	c->iev.events = EV_READ;
 	c->iev.data = cs;
-	event_set(&c->iev.ev, c->iev.ibuf.fd, c->iev.events,
-	    c->iev.handler, c->iev.data);
-	event_add(&c->iev.ev, NULL);
+	assert(c->iev.ev == NULL);
+	c->iev.ev = event_new(event_get_base(cs->cs_ev), c->iev.ibuf.fd,
+	    c->iev.events, c->iev.handler, c->iev.data);
+	assert(c->iev.ev != NULL);
+	event_add(c->iev.ev, NULL);
 
 	TAILQ_INSERT_TAIL(&ctl_conns, c, entry);
 }
@@ -235,13 +242,13 @@ control_close(int fd, struct control_sock *cs)
 	msgbuf_clear(&c->iev.ibuf.w);
 	TAILQ_REMOVE(&ctl_conns, c, entry);
 
-	event_del(&c->iev.ev);
+	event_free(c->iev.ev);
 	close(c->iev.ibuf.fd);
 
 	/* Some file descriptors are available again. */
-	if (evtimer_pending(&cs->cs_evt, NULL)) {
-		evtimer_del(&cs->cs_evt);
-		event_add(&cs->cs_ev, NULL);
+	if (evtimer_pending(cs->cs_evt, NULL)) {
+		evtimer_del(cs->cs_evt);
+		event_add(cs->cs_ev, NULL);
 	}
 
 	free(c);

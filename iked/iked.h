@@ -50,7 +50,7 @@ struct ike_header {
 struct imsgev {
 	struct imsgbuf		 ibuf;
 	void			(*handler)(int, short, void *);
-	struct event		 ev;
+	struct event		*ev;
 	struct privsep_proc	*proc;
 	void			*data;
 	short			 events;
@@ -76,8 +76,8 @@ struct imsgev {
 /* initially control.h */
 struct control_sock {
 	const char	*cs_name;
-	struct event	 cs_ev;
-	struct event	 cs_evt;
+	struct event	*cs_ev;
+	struct event	*cs_evt;
 	int		 cs_fd;
 	int		 cs_restricted;
 	void		*cs_env;
@@ -102,7 +102,7 @@ enum privsep_procid privsep_process;
  */
 
 struct iked_timer {
-	struct event	 tmr_ev;
+	struct event	*tmr_ev;
 	struct iked	*tmr_env;
 	void		(*tmr_cb)(struct iked *, void *);
 	void		*tmr_cbarg;
@@ -538,12 +538,13 @@ struct privsep {
 	unsigned int			 ps_instance;
 
 	/* Event and signal handlers */
-	struct event			 ps_evsigint;
-	struct event			 ps_evsigterm;
-	struct event			 ps_evsigchld;
-	struct event			 ps_evsighup;
-	struct event			 ps_evsigpipe;
-	struct event			 ps_evsigusr1;
+	struct event_base		*ps_evbase;
+	struct event			*ps_evsigint;
+	struct event			*ps_evsigterm;
+	struct event			*ps_evsigchld;
+	struct event			*ps_evsighup;
+	struct event			*ps_evsigpipe;
+	struct event			*ps_evsigusr1;
 
 	struct iked			*ps_env;
 };
@@ -590,7 +591,7 @@ struct iked {
 	void				*sc_priv;	/* per-process */
 
 	int				 sc_pfkey;	/* ike process */
-	struct event			 sc_pfkeyev;
+	struct event			*sc_pfkeyev;
 	uint8_t				 sc_certreqtype;
 	struct ibuf			*sc_certreq;
 
@@ -612,7 +613,7 @@ struct iked {
 
 struct iked_socket {
 	int			 sock_fd;
-	struct event		 sock_ev;
+	struct event		*sock_ev;
 	struct iked		*sock_env;
 	struct sockaddr_storage	 sock_addr;
 };
@@ -623,7 +624,7 @@ void	 parent_reload(struct iked *, int, const char *);
 /* control.c */
 pid_t	 control(struct privsep *, struct privsep_proc *);
 int	 control_init(struct privsep *, struct control_sock *);
-int	 control_listen(struct control_sock *);
+int	 control_listen(struct privsep *, struct control_sock *);
 void	 control_cleanup(struct control_sock *);
 
 /* config.c */

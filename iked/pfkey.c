@@ -34,6 +34,7 @@
 #include <net/pfkeyv2.h>
 #endif
 
+#include <assert.h>
 #include <err.h>
 #include <errno.h>
 #include <stdio.h>
@@ -57,7 +58,7 @@ static unsigned int sadb_decoupled = 0;
 static unsigned int sadb_ipv6refcnt = 0;
 
 static int pfkey_blockipv6 = 0;
-static struct event pfkey_timer_ev;
+static struct event *pfkey_timer_ev;
 static struct timeval pfkey_timer_tv;
 
 struct pfkey_message {
@@ -1455,7 +1456,7 @@ pfkey_reply(int sd, uint8_t **datap, ssize_t *lenp)
 		pm->pm_data = data;
 		pm->pm_length = len;
 		SIMPLEQ_INSERT_TAIL(&pfkey_postponed, pm, pm_entry);
-		evtimer_add(&pfkey_timer_ev, &pfkey_timer_tv);
+		evtimer_add(pfkey_timer_ev, &pfkey_timer_tv);
 	}
 
 	if (datap) {
@@ -1735,13 +1736,17 @@ pfkey_init(struct iked *env, int fd)
 	/* Set up a timer to process messages deferred by the pfkey_reply */
 	pfkey_timer_tv.tv_sec = 1;
 	pfkey_timer_tv.tv_usec = 0;
-	evtimer_set(&pfkey_timer_ev, pfkey_timer_cb, env);
+	assert(pfkey_timer_ev == NULL);
+	pfkey_timer_ev = evtimer_new(env->sc_ps.ps_evbase, pfkey_timer_cb,
+	    env);
 
 	/* Register the pfkey socket event handler */
 	env->sc_pfkey = fd;
-	event_set(&env->sc_pfkeyev, env->sc_pfkey,
+	assert(env->sc_pfkeyev == NULL);
+	env->sc_pfkeyev = event_new(env->sc_ps.ps_evbase, env->sc_pfkey,
 	    EV_READ|EV_PERSIST, pfkey_dispatch, env);
-	event_add(&env->sc_pfkeyev, NULL);
+	assert(env->sc_pfkeyev != NULL);
+	event_add(env->sc_pfkeyev, NULL);
 
 	/* Register it to get ESP and AH acquires from the kernel */
 	bzero(&smsg, sizeof(smsg));
@@ -1842,7 +1847,7 @@ pfkey_dispatch(int sd, short event, void *arg)
 		pmp->pm_length = len;
 		log_debug("%s: pfkey_process is busy, retry later", __func__);
 		SIMPLEQ_INSERT_TAIL(&pfkey_postponed, pmp, pm_entry);
-		evtimer_add(&pfkey_timer_ev, &pfkey_timer_tv);
+		evtimer_add(pfkey_timer_ev, &pfkey_timer_tv);
 	} else {
 		free(data);
 	}
@@ -1873,7 +1878,7 @@ pfkey_timer_cb(int unused, short event, void *arg)
 		SIMPLEQ_INSERT_TAIL(&pfkey_postponed, pm, pm_entry);
 	}
 	if (!SIMPLEQ_EMPTY(&pfkey_postponed))
-		evtimer_add(&pfkey_timer_ev, &pfkey_timer_tv);
+		evtimer_add(pfkey_timer_ev, &pfkey_timer_tv);
 }
 
 int

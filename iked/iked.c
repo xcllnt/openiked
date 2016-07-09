@@ -153,28 +153,33 @@ main(int argc, char *argv[])
 	setproctitle("parent");
 	log_procinit("parent");
 
-	event_init();
+	ps->ps_evbase = event_base_new();
 
-	signal_set(&ps->ps_evsigint, SIGINT, parent_sig_handler, ps);
-	signal_set(&ps->ps_evsigterm, SIGTERM, parent_sig_handler, ps);
-	signal_set(&ps->ps_evsigchld, SIGCHLD, parent_sig_handler, ps);
-	signal_set(&ps->ps_evsighup, SIGHUP, parent_sig_handler, ps);
-	signal_set(&ps->ps_evsigpipe, SIGPIPE, parent_sig_handler, ps);
-	signal_set(&ps->ps_evsigusr1, SIGUSR1, parent_sig_handler, ps);
-
-	signal_add(&ps->ps_evsigint, NULL);
-	signal_add(&ps->ps_evsigterm, NULL);
-	signal_add(&ps->ps_evsigchld, NULL);
-	signal_add(&ps->ps_evsighup, NULL);
-	signal_add(&ps->ps_evsigpipe, NULL);
-	signal_add(&ps->ps_evsigusr1, NULL);
+	ps->ps_evsigint = evsignal_new(ps->ps_evbase, SIGINT,
+	    parent_sig_handler, ps);
+	evsignal_add(ps->ps_evsigint, NULL);
+	ps->ps_evsigterm = evsignal_new(ps->ps_evbase, SIGTERM,
+	    parent_sig_handler, ps);
+	evsignal_add(ps->ps_evsigterm, NULL);
+	ps->ps_evsigchld = evsignal_new(ps->ps_evbase, SIGCHLD,
+	    parent_sig_handler, ps);
+	evsignal_add(ps->ps_evsigchld, NULL);
+	ps->ps_evsighup = evsignal_new(ps->ps_evbase, SIGHUP,
+	    parent_sig_handler, ps);
+	evsignal_add(ps->ps_evsighup, NULL);
+	ps->ps_evsigpipe = evsignal_new(ps->ps_evbase, SIGPIPE,
+	    parent_sig_handler, ps);
+	evsignal_add(ps->ps_evsigpipe, NULL);
+	ps->ps_evsigusr1 = evsignal_new(ps->ps_evbase, SIGUSR1,
+	    parent_sig_handler, ps);
+	evsignal_add(ps->ps_evsigusr1, NULL);
 
 	proc_listen(ps, procs, nitems(procs));
 
 	if (parent_configure(env) == -1)
 		fatalx("configuration failed");
 
-	event_dispatch();
+	event_base_dispatch(ps->ps_evbase);
 
 	log_debug("%d parent exiting", getpid());
 
