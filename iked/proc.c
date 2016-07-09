@@ -405,29 +405,24 @@ proc_run(struct privsep *ps, struct privsep_proc *p,
 	    ps->ps_instance + 1, ps->ps_instances[p->p_id], getpid());
 #endif
 
-	event_reinit(ps->ps_evbase);
+	assert(ps->ps_evbase == NULL);
+	ps->ps_evbase = event_base_new();
 
-	event_free(ps->ps_evsigint);
 	ps->ps_evsigint = evsignal_new(ps->ps_evbase, SIGINT,
 	    proc_sig_handler, p);
 	evsignal_add(ps->ps_evsigint, NULL);
-	event_free(ps->ps_evsigterm);
 	ps->ps_evsigterm = evsignal_new(ps->ps_evbase, SIGTERM,
 	    proc_sig_handler, p);
 	evsignal_add(ps->ps_evsigterm, NULL);
-	event_free(ps->ps_evsigchld);
 	ps->ps_evsigchld = evsignal_new(ps->ps_evbase, SIGCHLD,
 	    proc_sig_handler, p);
 	evsignal_add(ps->ps_evsigchld, NULL);
-	event_free(ps->ps_evsighup);
 	ps->ps_evsighup = evsignal_new(ps->ps_evbase, SIGHUP,
 	    proc_sig_handler, p);
 	evsignal_add(ps->ps_evsighup, NULL);
-	event_free(ps->ps_evsigpipe);
 	ps->ps_evsigpipe = evsignal_new(ps->ps_evbase, SIGPIPE,
 	    proc_sig_handler, p);
 	evsignal_add(ps->ps_evsigpipe, NULL);
-	event_free(ps->ps_evsigusr1);
 	ps->ps_evsigusr1 = evsignal_new(ps->ps_evbase, SIGUSR1,
 	    proc_sig_handler, p);
 	evsignal_add(ps->ps_evsigusr1, NULL);
