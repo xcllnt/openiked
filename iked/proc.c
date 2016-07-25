@@ -18,7 +18,6 @@
  */
 
 #include <sys/types.h>
-
 #include <sys/socket.h>
 #include <sys/wait.h>
 
@@ -337,7 +336,7 @@ proc_run(struct privsep *ps, struct privsep_proc *p,
 	struct control_sock	*rcs;
 	unsigned int		 n;
 #ifndef LIBRESSL_VERSION_NUMBER
-	u_int32_t		 seed[256];
+	uint32_t		 seed[256];
 #endif
 
 	if (ps->ps_noaction)

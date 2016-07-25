@@ -24,9 +24,9 @@
 %{
 #include <sys/types.h>
 #include <sys/ioctl.h>
-
 #include <sys/socket.h>
 #include <sys/stat.h>
+
 #include <net/if.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -826,6 +826,7 @@ ikeauth		: /* empty */			{
 			memcpy(&$$, &$2, sizeof($$));
 			$$.auth_method = IKEV2_AUTH_SHARED_KEY_MIC;
 			$$.auth_eap = EAP_TYPE_NONE;
+			$$.auth_length = 0;
 		}
 		| EAP STRING			{
 			unsigned int i;
@@ -1011,7 +1012,15 @@ string		: string STRING
 
 varset		: STRING '=' string
 		{
+			char *s = $1;
 			log_debug("%s = \"%s\"\n", $1, $3);
+			while (*s++) {
+				if (isspace((unsigned char)*s)) {
+					yyerror("macro name cannot contain "
+					    "whitespace");
+					YYERROR;
+				}
+			}
 			if (symset($1, $3, 0) == -1)
 				err(1, "cannot store variable");
 			free($1);

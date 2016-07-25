@@ -18,7 +18,6 @@
 
 #include <sys/types.h>
 
-
 #include <limits.h>
 #include <imsg.h>
 
@@ -880,11 +879,11 @@ int	 imsg_compose_event(struct imsgev *, uint16_t, uint32_t,
 int	 imsg_composev_event(struct imsgev *, uint16_t, uint32_t,
 	    pid_t, int, const struct iovec *, int);
 int	 proc_compose_imsg(struct privsep *, enum privsep_procid, int,
-	    u_int16_t, u_int32_t, int, void *, u_int16_t);
+	    uint16_t, uint32_t, int, void *, uint16_t);
 int	 proc_compose(struct privsep *, enum privsep_procid,
 	    uint16_t, void *, uint16_t);
 int	 proc_composev_imsg(struct privsep *, enum privsep_procid, int,
-	    u_int16_t, u_int32_t, int, const struct iovec *, int);
+	    uint16_t, uint32_t, int, const struct iovec *, int);
 int	 proc_composev(struct privsep *, enum privsep_procid,
 	    uint16_t, const struct iovec *, int);
 int	 proc_forward_imsg(struct privsep *, struct imsg *,

@@ -17,7 +17,6 @@
  */
 
 #include <sys/param.h>	/* roundup */
-
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <sys/uio.h>
@@ -1512,10 +1511,10 @@ ikev2_add_ipcompnotify(struct iked *env, struct ibuf *e,
 {
 	struct iked_childsa		 csa;
 	struct ikev2_notify		*n;
-	u_int8_t			*ptr;
-	u_int16_t			 cpi;
-	u_int32_t			 spi;
-	u_int8_t			 transform;
+	uint8_t				*ptr;
+	uint16_t			 cpi;
+	uint32_t			 spi;
+	uint8_t				 transform;
 
 	/* we only support deflate */
 	transform = IKEV2_IPCOMP_DEFLATE;
@@ -3355,7 +3354,7 @@ ikev2_ike_sa_alive(struct iked *env, void *arg)
 #else
 		last_used = tv.tv_sec;	/* XXX */
 #endif
-		diff = (u_int32_t)(tv.tv_sec - last_used);
+		diff = (uint32_t)(tv.tv_sec - last_used);
 		log_debug("%s: %s CHILD SA spi %s last used %llu second(s) ago",
 		    __func__,
 		    csa->csa_dir == IPSP_DIRECTION_IN ? "incoming" : "outgoing",
@@ -4777,11 +4776,11 @@ ikev2_childsa_enable(struct iked *env, struct iked_sa *sa)
 }
 
 int
-ikev2_childsa_delete(struct iked *env, struct iked_sa *sa, u_int8_t saproto,
-    u_int64_t spi, u_int64_t *spiptr, int cleanup)
+ikev2_childsa_delete(struct iked *env, struct iked_sa *sa, uint8_t saproto,
+    uint64_t spi, uint64_t *spiptr, int cleanup)
 {
 	struct iked_childsa	*csa, *nextcsa = NULL;
-	u_int64_t		 peerspi = 0;
+	uint64_t		 peerspi = 0;
 	int			 found = 0;
 
 	for (csa = TAILQ_FIRST(&sa->sa_childsas); csa != NULL; csa = nextcsa) {

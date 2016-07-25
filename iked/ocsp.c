@@ -17,7 +17,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <sys/stat.h>

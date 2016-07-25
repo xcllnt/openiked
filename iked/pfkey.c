@@ -19,7 +19,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-
 #include <sys/uio.h>
 #include <sys/socket.h>
 
@@ -63,14 +62,14 @@ static struct timeval pfkey_timer_tv;
 struct pfkey_message {
 	SIMPLEQ_ENTRY(pfkey_message)
 			 pm_entry;
-	u_int8_t	*pm_data;
+	uint8_t		*pm_data;
 	ssize_t		 pm_length;
 };
 SIMPLEQ_HEAD(, pfkey_message) pfkey_retry, pfkey_postponed =
     SIMPLEQ_HEAD_INITIALIZER(pfkey_postponed);
 
 struct pfkey_constmap {
-	u_int8_t	 pfkey_id;
+	uint8_t		 pfkey_id;
 	u_int		 pfkey_ikeid;
 	u_int		 pfkey_fixedkey;
 };
@@ -469,10 +468,10 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 	struct iovec		 iov[IOV_CNT];
 	int			 iov_cnt, ret = -1;
 	in_port_t		 sport, dport;
-	u_int8_t		 smask, dmask;
-	u_int8_t		 zeropad[8];
+	uint8_t			 smask, dmask;
+	uint8_t			 zeropad[8];
 	size_t			 padlen;
-	u_int8_t		*reply = NULL;
+	uint8_t			*reply = NULL;
 	ssize_t			 rlen;
 
 	bzero(&ssrc, sizeof(ssrc));
@@ -689,7 +688,7 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 	struct iked_lifetime	*lt;
 	struct iked_policy	*pol;
 	struct iovec		 iov[IOV_CNT];
-	u_int32_t		 jitter;
+	uint32_t		 jitter;
 	int			 iov_cnt;
 
 	sa_srcid = sa_dstid = NULL;
@@ -1013,7 +1012,7 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 
 #if defined(_OPENBSD_IPSEC_API_VERSION)
 int
-pfkey_sa_last_used(int sd, struct iked_childsa *sa, u_int64_t *last_used)
+pfkey_sa_last_used(int sd, struct iked_childsa *sa, uint64_t *last_used)
 {
 	struct sadb_msg		*msg, smsg;
 	struct sadb_address	 sa_src, sa_dst;
@@ -1119,15 +1118,15 @@ pfkey_sa_last_used(int sd, struct iked_childsa *sa, u_int64_t *last_used)
 	log_debug("%s: last_used %llu", __func__, *last_used);
 
 done:
-	bzero(data, n);
+	explicit_bzero(data, n);
 	free(data);
 	return (ret);
 }
 #endif
 
 int
-pfkey_sa_getspi(int sd, u_int8_t satype, struct iked_childsa *sa,
-    u_int32_t *spip)
+pfkey_sa_getspi(int sd, uint8_t satype, struct iked_childsa *sa,
+    uint32_t *spip)
 {
 	struct sadb_msg		*msg, smsg;
 	struct sadb_address	 sa_src, sa_dst;
@@ -1228,14 +1227,14 @@ pfkey_sa_getspi(int sd, u_int8_t satype, struct iked_childsa *sa,
 	log_debug("%s: spi 0x%08x", __func__, *spip);
 
 done:
-	bzero(data, n);
+	explicit_bzero(data, n);
 	free(data);
 	return (ret);
 }
 
 #if defined(_OPENBSD_IPSEC_API_VERSION)
 int
-pfkey_sagroup(int sd, u_int8_t satype1, u_int8_t action,
+pfkey_sagroup(int sd, uint8_t satype1, uint8_t action,
     struct iked_childsa *sa1, struct iked_childsa *sa2)
 {
 	struct sadb_msg		smsg;
@@ -1350,7 +1349,7 @@ pfkey_sagroup(int sd, u_int8_t satype1, u_int8_t action,
 
 int
 pfkey_write(int sd, struct sadb_msg *smsg, struct iovec *iov, int iov_cnt,
-    u_int8_t **datap, ssize_t *lenp)
+    uint8_t **datap, ssize_t *lenp)
 {
 	ssize_t n, len = smsg->sadb_msg_len * 8;
 
@@ -1905,7 +1904,7 @@ pfkey_process(struct iked *env, struct pfkey_message *pm)
 	struct iked_flow	 flow;
 	struct sockaddr		*ssrc;
 #endif
-	u_int8_t		*data = pm->pm_data;
+	uint8_t			*data = pm->pm_data;
 	ssize_t			 len = pm->pm_length;
 
 	if (!env || !data || !len)

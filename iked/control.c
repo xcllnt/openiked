@@ -17,11 +17,9 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-
 
 #include <net/if.h>
 
