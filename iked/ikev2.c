@@ -796,7 +796,7 @@ void
 ikev2_init_ike_sa(struct iked *env, void *arg)
 {
 	struct iked_policy	*pol;
-	u_int mode;
+	unsigned int		 mode;
 
 	TAILQ_FOREACH(pol, &env->sc_policies, pol_entry) {
 		mode = pol->pol_flags & IKED_POLICY_MODE_MASK;

@@ -143,7 +143,7 @@ policy_test(struct iked *env, struct iked_policy *key)
 {
 	struct iked_policy	*p = NULL, *pol = NULL;
 	struct iked_flow	*flow = NULL, *flowkey;
-	u_int			 cnt = 0;
+	unsigned int		 cnt = 0;
 
 	p = TAILQ_FIRST(&env->sc_policies);
 	while (p != NULL) {

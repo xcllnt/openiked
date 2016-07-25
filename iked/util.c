@@ -41,7 +41,7 @@ extern int	 verbose;
 int
 socket_af(struct sockaddr *sa, in_port_t port)
 {
-	u_int salen;
+	unsigned int salen;
 
 	errno = 0;
 	switch (sa->sa_family) {
