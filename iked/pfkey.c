@@ -414,14 +414,13 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 	smsg.sadb_msg_len += sa_protocol.sadb_protocol_len;
 	iov_cnt++;
 
-	if (sa_srcid) {
+	if (sa_srcid != NULL && sa_dstid != NULL) {
 		/* src identity */
 		iov[iov_cnt].iov_base = sa_srcid;
 		iov[iov_cnt].iov_len = sa_srcid->sadb_ident_len * 8;
 		smsg.sadb_msg_len += sa_srcid->sadb_ident_len;
 		iov_cnt++;
-	}
-	if (sa_dstid) {
+
 		/* dst identity */
 		iov[iov_cnt].iov_base = sa_dstid;
 		iov[iov_cnt].iov_len = sa_dstid->sadb_ident_len * 8;
@@ -963,14 +962,13 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 		iov_cnt++;
 	}
 
-	if (sa_srcid) {
+	if (sa_srcid != NULL && sa_dstid != NULL) {
 		/* src identity */
 		iov[iov_cnt].iov_base = sa_srcid;
 		iov[iov_cnt].iov_len = sa_srcid->sadb_ident_len * 8;
 		smsg.sadb_msg_len += sa_srcid->sadb_ident_len;
 		iov_cnt++;
-	}
-	if (sa_dstid) {
+
 		/* dst identity */
 		iov[iov_cnt].iov_base = sa_dstid;
 		iov[iov_cnt].iov_len = sa_dstid->sadb_ident_len * 8;
