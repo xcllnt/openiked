@@ -4439,12 +4439,29 @@ ikev2_childsa_negotiate(struct iked *env, struct iked_sa *sa,
 			memcpy(flowb, flowa, sizeof(*flow));
 
 			flowb->flow_dir = IPSP_DIRECTION_IN;
-			flowb->flow_loaded = 0;
 			memcpy(&flowb->flow_src, &flow->flow_dst,
 			    sizeof(flow->flow_dst));
 			memcpy(&flowb->flow_dst, &flow->flow_src,
 			    sizeof(flow->flow_src));
 			ikev2_cp_fixaddr(sa, &flow->flow_dst, &flowb->flow_src);
+
+			/*
+			 * Due to lazy mode, flow->flow_loaded may be 1.
+			 * This has been propagated to both flowa and flowb.
+			 * We know for sure that flowb hasn't been loaded,
+			 * so we need to fix that.
+			 * But we also need to protect the flowa against
+			 * being unloaded, because it would also affect
+			 * flow and we end up without a flow in the kernel.
+			 * This breaks the lazy mode.
+			 * What we want is that flowa is never removed from
+			 * the kernel. We do this by setting flow_loaded
+			 * to -1.
+			 */
+			if (flow->flow_loaded) {
+				flowa->flow_loaded = -1;
+				flowb->flow_loaded = 0;
+			}
 
 			TAILQ_INSERT_TAIL(&sa->sa_flows, flowa, flow_entry);
 			TAILQ_INSERT_TAIL(&sa->sa_flows, flowb, flow_entry);

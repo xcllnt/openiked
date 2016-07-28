@@ -139,7 +139,8 @@ struct iked_flow {
 	struct iked_addr		 flow_dst;
 	unsigned int			 flow_dir;	/* in/out */
 
-	unsigned int			 flow_loaded;	/* pfkey done */
+	/* flow_loaded must be signed! */
+	int8_t				 flow_loaded;	/* pfkey done */
 
 	uint8_t				 flow_saproto;
 	uint8_t				 flow_ipproto;
