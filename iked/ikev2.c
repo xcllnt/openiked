@@ -175,8 +175,7 @@ ikev2_dispatch_parent(int fd, struct privsep_proc *p, struct imsg *imsg)
 	case IMSG_CTL_PASSIVE:
 		if (config_getmode(env, imsg->hdr.type) == -1)
 			return (0);	/* ignore error */
-		timer_set(env, &env->sc_inittmr, ikev2_init_ike_sa,
-		    NULL);
+		timer_set(env, &env->sc_inittmr, ikev2_init_ike_sa, NULL);
 		timer_add(env, &env->sc_inittmr, IKED_INITIATOR_INITIAL);
 		return (0);
 	case IMSG_UDP_SOCKET:
@@ -799,6 +798,13 @@ ikev2_init_ike_sa(struct iked *env, void *arg)
 	unsigned int		 mode;
 
 	TAILQ_FOREACH(pol, &env->sc_policies, pol_entry) {
+		if (pol->pol_flags & IKED_POLICY_RETRY) {
+			pol->pol_flags &= ~IKED_POLICY_RETRY;
+			log_debug("%s: \"%s\": retrying", __func__,
+			    pol->pol_name);
+			goto retry;
+		}
+
 		mode = pol->pol_flags & IKED_POLICY_MODE_MASK;
 		if (mode == IKED_POLICY_MODE_PASSIVE)
 			continue;
@@ -818,12 +824,11 @@ ikev2_init_ike_sa(struct iked *env, void *arg)
 		}
 
 		log_debug("%s: \"%s\": initiating", __func__, pol->pol_name);
-
+ retry:
 		if (ikev2_init_ike_sa_peer(env, pol, &pol->pol_peer))
 			log_debug("%s: failed to initiate with peer %s",
 			    __func__,
-			    print_host((struct sockaddr *)&pol->pol_peer.addr,
-			    NULL, 0));
+			    print_host((void *)&pol->pol_peer.addr, NULL, 0));
 	}
 
 	timer_set(env, &env->sc_inittmr, ikev2_init_ike_sa, NULL);

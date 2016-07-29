@@ -1169,10 +1169,11 @@ ikev2_pld_notify(struct iked *env, struct ikev2_payload *pld,
 			msg->msg_sa = NULL;
 			return (-1);
 		}
+		group_free(msg->msg_policy->pol_peerdh);
 		memcpy(&group, buf, len);
 		group = betoh16(group);
-		if ((msg->msg_policy->pol_peerdh = group_get(group))
-		    == NULL) {
+		msg->msg_policy->pol_peerdh = group_get(group);
+		if (msg->msg_policy->pol_peerdh == NULL) {
 			log_debug("%s: unable to select DH group %d", __func__,
 			    group);
 			return (-1);
@@ -1185,8 +1186,9 @@ ikev2_pld_notify(struct iked *env, struct ikev2_payload *pld,
 		/*
 		 * XXX should also happen for PFS so we have to check state.
 		 */
+		msg->msg_policy->pol_flags |= IKED_POLICY_RETRY;
 		timer_set(env, &env->sc_inittmr, ikev2_init_ike_sa, NULL);
-		timer_add(env, &env->sc_inittmr, IKED_INITIATOR_INITIAL);
+		timer_add(env, &env->sc_inittmr, IKED_INITIATOR_RETRY);
 		break;
 	case IKEV2_N_NO_ADDITIONAL_SAS:
 		if (!msg->msg_e) {

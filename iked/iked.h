@@ -225,6 +225,7 @@ struct iked_lifetime {
 
 struct iked_policy {
 	unsigned int			 pol_id;
+	int				 pol_refcnt;
 	char				 pol_name[IKED_ID_SIZE];
 
 #define IKED_SKIP_FLAGS			 0
@@ -235,18 +236,18 @@ struct iked_policy {
 #define IKED_SKIP_COUNT			 5
 	struct iked_policy		*pol_skip[IKED_SKIP_COUNT];
 
-	uint8_t				 pol_flags;
-#define IKED_POLICY_MODE_MASK		 0x03
-#define IKED_POLICY_MODE_PASSIVE	 0x00
-#define IKED_POLICY_MODE_LAZY		 0x01
-#define IKED_POLICY_MODE_ACTIVE		 0x02
-#define IKED_POLICY_REFCNT		 0x04
-#define IKED_POLICY_QUICK		 0x08
-#define IKED_POLICY_SKIP		 0x10
-#define IKED_POLICY_IPCOMP		 0x20
-#define IKED_POLICY_TRANSPORT		 0x40
-#define IKED_POLICY_DEFAULT		 0x80
-	int				 pol_refcnt;
+	uint16_t			 pol_flags;
+#define IKED_POLICY_MODE_MASK		 0x003
+#define IKED_POLICY_MODE_PASSIVE	 0x000
+#define IKED_POLICY_MODE_LAZY		 0x001
+#define IKED_POLICY_MODE_ACTIVE		 0x002
+#define IKED_POLICY_REFCNT		 0x004
+#define IKED_POLICY_QUICK		 0x008
+#define IKED_POLICY_SKIP		 0x010
+#define IKED_POLICY_IPCOMP		 0x020
+#define IKED_POLICY_TRANSPORT		 0x040
+#define IKED_POLICY_DEFAULT		 0x080
+#define IKED_POLICY_RETRY		 0x100
 
 	uint8_t				 pol_certreqtype;
 
@@ -600,6 +601,7 @@ struct iked {
 	struct iked_timer		 sc_inittmr;
 #define IKED_INITIATOR_INITIAL		 2
 #define IKED_INITIATOR_INTERVAL		 60
+#define IKED_INITIATOR_RETRY		 1
 
 	struct privsep			 sc_ps;
 
