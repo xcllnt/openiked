@@ -513,13 +513,14 @@ int
 config_setsocket(struct iked *env, struct sockaddr_storage *ss,
     in_port_t port, enum privsep_procid id)
 {
-	int	 s;
+	int	 ret, s;
 
-	if ((s = udp_bind((struct sockaddr *)ss, port)) == -1)
+	s = udp_bind((struct sockaddr *)ss, port);
+	if (s == -1)
 		return (-1);
-	proc_compose_imsg(&env->sc_ps, id, -1,
-	    IMSG_UDP_SOCKET, -1, s, ss, sizeof(*ss));
-	return (0);
+	ret = proc_compose_imsg(&env->sc_ps, id, -1, IMSG_UDP_SOCKET, -1,
+	    s, ss, sizeof(*ss));
+	return (ret);
 }
 
 int
@@ -569,13 +570,14 @@ config_getsocket(struct iked *env, struct imsg *imsg,
 int
 config_setpfkey(struct iked *env, enum privsep_procid id)
 {
-	int	 s;
+	int	 ret, s;
 
-	if ((s = pfkey_socket()) == -1)
+	s = pfkey_socket();
+	if (s == -1)
 		return (-1);
-	proc_compose_imsg(&env->sc_ps, id, -1,
-	    IMSG_PFKEY_SOCKET, -1, s, NULL, 0);
-	return (0);
+	ret = proc_compose_imsg(&env->sc_ps, id, -1, IMSG_PFKEY_SOCKET, -1,
+	    s, NULL, 0);
+	return (ret);
 }
 
 int
