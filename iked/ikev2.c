@@ -768,13 +768,16 @@ ikev2_init_recv(struct iked *env, struct iked_message *msg,
 }
 
 static void
-ikev2_install_flows(struct iked *env, struct iked_policy *pol)
+ikev2_policy_load_flows(struct iked *env, struct iked_policy *pol)
 {
 	struct iked_flow *flow;
 
 	RB_FOREACH(flow, iked_flows, &pol->pol_flows) {
 		if (flow->flow_loaded)
 			continue;
+
+		log_debug("%s: \"%s\": loading flow %p", __func__,
+		    pol->pol_name, flow);
 
 		flow->flow_saproto = pol->pol_saproto;
 		flow->flow_transport = pol->pol_flags & IKED_POLICY_TRANSPORT;
@@ -787,7 +790,7 @@ ikev2_install_flows(struct iked *env, struct iked_policy *pol)
 			    flow);
 			continue;
 		}
-		log_debug("%s: loaded flow %p", __func__, flow);
+		log_debug("%s: flow %p loaded", __func__, flow);
 	}
 }
 
@@ -809,10 +812,7 @@ ikev2_init_ike_sa(struct iked *env, void *arg)
 		if (mode == IKED_POLICY_MODE_PASSIVE)
 			continue;
 
-		log_debug("%s: \"%s\": installing flows", __func__,
-		    pol->pol_name);
-
-		ikev2_install_flows(env, pol);
+		ikev2_policy_load_flows(env, pol);
 
 		if (mode == IKED_POLICY_MODE_LAZY)
 			continue;
