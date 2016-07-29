@@ -856,9 +856,19 @@ ikev2_init_ike_sa_peer(struct iked *env, struct iked_policy *pol,
 	if ((sa = sa_new(env, 0, 0, 1, pol)) == NULL)
 		return (-1);
 
-	/* Pick peer's DH group if asked */
-	/* XXX free old sa_dhgroup ? */
-	sa->sa_dhgroup = pol->pol_peerdh;
+	/*
+	 * Pick peer's DH group if asked. Do this only once to try our
+	 * preferred DH group next time again. Things may have changed
+	 * between now and then and we don't want to get stuck with a
+	 * stale DH group.
+	 * Note: sa->sa_dhgroup gets freed, which means that if we want
+	 * to keep using the peer's DH group, we must make a copy (by
+	 * using group_get(). We otherwise have a use-after-free bug!
+	 */
+	if (pol->pol_peerdh != NULL) {
+		sa->sa_dhgroup = pol->pol_peerdh;
+		pol->pol_peerdh = NULL;
+	}
 
 	if (ikev2_sa_initiator(env, sa, NULL, NULL) == -1)
 		goto done;
