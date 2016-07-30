@@ -235,13 +235,23 @@ msgbuf_write(struct msgbuf *msgbuf)
 	bzero(&iov, sizeof(iov));
 	bzero(&msg, sizeof(msg));
 	TAILQ_FOREACH(buf, &msgbuf->bufs, entry) {
+		/*
+		 * Send file descriptors (i.e. sockets) by themselves
+		 * in control messages and without any data. FreeBSD
+		 * seems to have a problem otherwise. Note that this
+		 * means that sendmsg() can return 0, because no data
+		 * was sent!
+		 */
+		if (buf->fd != -1) {
+			if (i > 0)
+				buf = NULL;
+			break;
+		}
 		if (i >= IOV_MAX)
 			break;
 		iov[i].iov_base = buf->buf + buf->rpos;
 		iov[i].iov_len = buf->wpos - buf->rpos;
 		i++;
-		if (buf->fd != -1)
-			break;
 	}
 
 	msg.msg_iov = iov;
@@ -258,7 +268,8 @@ msgbuf_write(struct msgbuf *msgbuf)
 	}
 
 again:
-	if ((n = sendmsg(msgbuf->fd, &msg, 0)) == -1) {
+	n = sendmsg(msgbuf->fd, &msg, 0);
+	if (n == -1) {
 		if (errno == EAGAIN || errno == EINTR)
 			goto again;
 		if (errno == ENOBUFS)
@@ -266,7 +277,7 @@ again:
 		return (-1);
 	}
 
-	if (n == 0) {			/* connection closed */
+	if (n == 0 && i > 0) {			/* connection closed */
 		errno = 0;
 		return (0);
 	}
