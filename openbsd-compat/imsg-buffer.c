@@ -235,6 +235,7 @@ msgbuf_write(struct msgbuf *msgbuf)
 	bzero(&iov, sizeof(iov));
 	bzero(&msg, sizeof(msg));
 	TAILQ_FOREACH(buf, &msgbuf->bufs, entry) {
+#ifdef __FreeBSD__
 		/*
 		 * Send file descriptors (i.e. sockets) by themselves
 		 * in control messages and without any data. FreeBSD
@@ -247,11 +248,16 @@ msgbuf_write(struct msgbuf *msgbuf)
 				buf = NULL;
 			break;
 		}
+#endif
 		if (i >= IOV_MAX)
 			break;
 		iov[i].iov_base = buf->buf + buf->rpos;
 		iov[i].iov_len = buf->wpos - buf->rpos;
 		i++;
+#ifndef __FreeBSD__
+		if (buf->fd != -1)
+			break;
+#endif
 	}
 
 	msg.msg_iov = iov;
