@@ -638,6 +638,7 @@ int
 ikev2_ike_auth(struct iked *env, struct iked_sa *sa)
 {
 	struct iked_policy	*pol = sa->sa_policy;
+	unsigned int		 required;
 	uint8_t			 certreqtype;
 
 	/* Attempt state transition */
@@ -649,9 +650,9 @@ ikev2_ike_auth(struct iked *env, struct iked_sa *sa)
 	if (sa->sa_hdr.sh_initiator) {
 		if (sa_stateok(sa, IKEV2_STATE_AUTH_SUCCESS))
 			return (ikev2_init_done(env, sa));
-		else
-			return (ikev2_init_ike_auth(env, sa));
-	}
+		required = sa->sa_stateinit;
+	} else
+		required = sa->sa_statevalid;
 
 	/*
 	 * If we have to send a local certificate but did not receive an
@@ -659,7 +660,7 @@ ikev2_ike_auth(struct iked *env, struct iked_sa *sa)
 	 * We could alternatively extract the CA from the peer certificate
 	 * to find a matching local one.
 	 */
-	if (sa->sa_statevalid & IKED_REQ_CERT) {
+	if (required & IKED_REQ_CERT) {
 		if ((sa->sa_stateflags & IKED_REQ_CERTREQ) == 0) {
 			log_debug("%s: no CERTREQ, using default", __func__);
 			if (pol->pol_certreqtype)
@@ -674,7 +675,10 @@ ikev2_ike_auth(struct iked *env, struct iked_sa *sa)
 			return (0);	/* ignored, wait for cert */
 	}
 
-	return (ikev2_resp_ike_auth(env, sa));
+	if (sa->sa_hdr.sh_initiator)
+		return (ikev2_init_ike_auth(env, sa));
+	else
+		return (ikev2_resp_ike_auth(env, sa));
 }
 
 void
