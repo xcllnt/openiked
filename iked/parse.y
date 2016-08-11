@@ -826,7 +826,6 @@ ikeauth		: /* empty */			{
 			memcpy(&$$, &$2, sizeof($$));
 			$$.auth_method = IKEV2_AUTH_SHARED_KEY_MIC;
 			$$.auth_eap = EAP_TYPE_NONE;
-			$$.auth_length = 0;
 		}
 		| EAP STRING			{
 			unsigned int i;
