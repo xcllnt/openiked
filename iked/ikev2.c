@@ -1330,6 +1330,79 @@ ikev2_add_payload(struct ibuf *buf)
 	return (pld);
 }
 
+static struct ikev2_ts *
+ikev2_add_ts_payload_addr(struct ibuf *buf, struct iked_addr *addr,
+    in_port_t port)
+{
+	struct ikev2_ts		*ts;
+	struct sockaddr_in	*in4;
+	struct sockaddr_in6	*in6;
+	uint8_t			*ptr;
+	uint32_t		 av[4], bv[4], mv[4];
+
+	ts = ibuf_advance(buf, sizeof(*ts));
+	if (ts == NULL)
+		return (ts);
+
+	if (port) {
+		ts->ts_startport = port;
+		ts->ts_endport = port;
+	} else {
+		ts->ts_startport = 0;
+		ts->ts_endport = 0xffff;
+	}
+
+	switch (addr->addr.ss_family) {
+	case AF_INET:
+		ts->ts_type = IKEV2_TS_IPV4_ADDR_RANGE;
+		ts->ts_length = htobe16(sizeof(*ts) + 8);
+
+		if ((ptr = ibuf_advance(buf, 8)) == NULL)
+			return (NULL);
+
+		in4 = (struct sockaddr_in *)&addr->addr;
+		if (addr->addr_net) {
+			/* Convert IPv4 network to address range */
+			mv[0] = prefixlen2mask(addr->addr_mask);
+			av[0] = in4->sin_addr.s_addr & mv[0];
+			bv[0] = in4->sin_addr.s_addr | ~mv[0];
+		} else
+			av[0] = bv[0] = in4->sin_addr.s_addr;
+
+		memcpy(ptr, &av[0], 4);
+		memcpy(ptr + 4, &bv[0], 4);
+		break;
+	case AF_INET6:
+		ts->ts_type = IKEV2_TS_IPV6_ADDR_RANGE;
+		ts->ts_length = htobe16(sizeof(*ts) + 32);
+
+		if ((ptr = ibuf_advance(buf, 32)) == NULL)
+			return (NULL);
+
+		in6 = (struct sockaddr_in6 *)&addr->addr;
+		memcpy(&av, &in6->sin6_addr.s6_addr, 16);
+		memcpy(&bv, &in6->sin6_addr.s6_addr, 16);
+		if (addr->addr_net) {
+			/* Convert IPv6 network to address range */
+			prefixlen2mask6(addr->addr_mask, mv);
+			av[0] &= mv[0];
+			av[1] &= mv[1];
+			av[2] &= mv[2];
+			av[3] &= mv[3];
+			bv[0] |= ~mv[0];
+			bv[1] |= ~mv[1];
+			bv[2] |= ~mv[2];
+			bv[3] |= ~mv[3];
+		}
+
+		memcpy(ptr, &av, 16);
+		memcpy(ptr + 16, &bv, 16);
+		break;
+	}
+
+	return (ts);
+}
+
 ssize_t
 ikev2_add_ts_payload(struct ibuf *buf, unsigned int type, struct iked_sa *sa)
 {
@@ -1339,33 +1412,40 @@ ikev2_add_ts_payload(struct ibuf *buf, unsigned int type, struct iked_sa *sa)
 	struct iked_flow	*flow;
 	struct iked_addr	*addr;
 	struct iked_addr	 pooladdr;
-	uint8_t			*ptr;
 	size_t			 len = 0;
-	uint32_t		 av[4], bv[4], mv[4];
-	struct sockaddr_in	*in4;
-	struct sockaddr_in6	*in6;
 
-	if ((tsp = ibuf_advance(buf, sizeof(*tsp))) == NULL)
+	if (type != IKEV2_PAYLOAD_TSi && type != IKEV2_PAYLOAD_TSr)
 		return (-1);
-	tsp->tsp_count = pol->pol_nflows;
+
 	len = sizeof(*tsp);
+	if ((tsp = ibuf_advance(buf, len)) == NULL)
+		return (-1);
+
+	if (sa->sa_transport) {
+		tsp->tsp_count = 1;
+
+		if ((type == IKEV2_PAYLOAD_TSi && sa->sa_hdr.sh_initiator) ||
+		    (type == IKEV2_PAYLOAD_TSr && !sa->sa_hdr.sh_initiator))
+			addr = &sa->sa_local;
+		else
+			addr = &sa->sa_peer;
+
+		ts = ikev2_add_ts_payload_addr(buf, addr, 0);
+		if (ts == NULL)
+			return (-1);
+
+		len += betoh16(ts->ts_length);
+		return (len);
+	}
+
+	tsp->tsp_count = pol->pol_nflows;
 
 	RB_FOREACH(flow, iked_flows, &pol->pol_flows) {
-		if ((ts = ibuf_advance(buf, sizeof(*ts))) == NULL)
-			return (-1);
-
-		if (type == IKEV2_PAYLOAD_TSi) {
-			if (sa->sa_hdr.sh_initiator)
-				addr = &flow->flow_src;
-			else
-				addr = &flow->flow_dst;
-		} else if (type == IKEV2_PAYLOAD_TSr) {
-			if (sa->sa_hdr.sh_initiator)
-				addr = &flow->flow_dst;
-			else
-				addr = &flow->flow_src;
-		} else
-			return (-1);
+		if ((type == IKEV2_PAYLOAD_TSi && sa->sa_hdr.sh_initiator) ||
+		    (type == IKEV2_PAYLOAD_TSr && !sa->sa_hdr.sh_initiator))
+			addr = &flow->flow_src;
+		else
+			addr = &flow->flow_dst;
 
 		/* patch remote address (if configured to 0.0.0.0) */
 		if ((type == IKEV2_PAYLOAD_TSi && !sa->sa_hdr.sh_initiator) ||
@@ -1374,65 +1454,11 @@ ikev2_add_ts_payload(struct ibuf *buf, unsigned int type, struct iked_sa *sa)
 				addr = &pooladdr;
 		}
 
+		ts = ikev2_add_ts_payload_addr(buf, addr, addr->addr_port);
+		if (ts == NULL)
+			return (-1);
+
 		ts->ts_protoid = flow->flow_ipproto;
-
-		if (addr->addr_port) {
-			ts->ts_startport = addr->addr_port;
-			ts->ts_endport = addr->addr_port;
-		} else {
-			ts->ts_startport = 0;
-			ts->ts_endport = 0xffff;
-		}
-
-		switch (addr->addr.ss_family) {
-		case AF_INET:
-			ts->ts_type = IKEV2_TS_IPV4_ADDR_RANGE;
-			ts->ts_length = htobe16(sizeof(*ts) + 8);
-
-			if ((ptr = ibuf_advance(buf, 8)) == NULL)
-				return (-1);
-
-			in4 = (struct sockaddr_in *)&addr->addr;
-			if (addr->addr_net) {
-				/* Convert IPv4 network to address range */
-				mv[0] = prefixlen2mask(addr->addr_mask);
-				av[0] = in4->sin_addr.s_addr & mv[0];
-				bv[0] = in4->sin_addr.s_addr | ~mv[0];
-			} else
-				av[0] = bv[0] = in4->sin_addr.s_addr;
-
-			memcpy(ptr, &av[0], 4);
-			memcpy(ptr + 4, &bv[0], 4);
-			break;
-		case AF_INET6:
-			ts->ts_type = IKEV2_TS_IPV6_ADDR_RANGE;
-			ts->ts_length = htobe16(sizeof(*ts) + 32);
-
-			if ((ptr = ibuf_advance(buf, 32)) == NULL)
-				return (-1);
-
-			in6 = (struct sockaddr_in6 *)&addr->addr;
-
-			memcpy(&av, &in6->sin6_addr.s6_addr, 16);
-			memcpy(&bv, &in6->sin6_addr.s6_addr, 16);
-			if (addr->addr_net) {
-				/* Convert IPv6 network to address range */
-				prefixlen2mask6(addr->addr_mask, mv);
-				av[0] &= mv[0];
-				av[1] &= mv[1];
-				av[2] &= mv[2];
-				av[3] &= mv[3];
-				bv[0] |= ~mv[0];
-				bv[1] |= ~mv[1];
-				bv[2] |= ~mv[2];
-				bv[3] |= ~mv[3];
-			}
-
-			memcpy(ptr, &av, 16);
-			memcpy(ptr + 16, &bv, 16);
-			break;
-		}
-
 		len += betoh16(ts->ts_length);
 	}
 
