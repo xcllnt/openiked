@@ -1421,7 +1421,7 @@ ikev2_add_ts_payload(struct ibuf *buf, unsigned int type, struct iked_sa *sa)
 	if ((tsp = ibuf_advance(buf, len)) == NULL)
 		return (-1);
 
-	if (sa->sa_transport) {
+	if (pol->pol_flags & IKED_POLICY_TRANSPORT) {
 		tsp->tsp_count = 1;
 
 		if ((type == IKEV2_PAYLOAD_TSi && sa->sa_hdr.sh_initiator) ||
