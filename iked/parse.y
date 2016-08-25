@@ -2580,7 +2580,8 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 	TAILQ_INIT(&pol.pol_proposals);
 	RB_INIT(&pol.pol_flows);
 
-	prop[0].prop_id = ++pol.pol_nproposals;
+	pol.pol_nproposals++;
+	prop[0].prop_id = 1;
 	prop[0].prop_protoid = IKEV2_SAPROTO_IKE;
 	if (ike_sa == NULL || ike_sa->xfs == NULL) {
 		prop[0].prop_nxforms = ikev2_default_nike_transforms;
@@ -2612,7 +2613,8 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 	}
 	TAILQ_INSERT_TAIL(&pol.pol_proposals, &prop[0], prop_entry);
 
-	prop[1].prop_id = ++pol.pol_nproposals;
+	pol.pol_nproposals++;
+	prop[1].prop_id = 1;
 	prop[1].prop_protoid = saproto;
 	if (ipsec_sa == NULL || ipsec_sa->xfs == NULL) {
 		prop[1].prop_nxforms = ikev2_default_nesp_transforms;
