@@ -141,6 +141,12 @@ ca_opt(struct parse_result *res)
 	case CA_KEY_IMPORT:
 		ca_key_import(ca, res->host, res->path);
 		break;
+	case CA_SUBCA_CREATE:
+		ca_subca_create(ca, res->subcaname, res->pass, res->quiet);
+		break;
+	case CA_SUBCA_REVOKE:
+		ca_subca_revoke(ca, res->subcaname);
+		break;
 	default:
 		break;
 	}
@@ -203,6 +209,8 @@ main(int argc, char *argv[])
 	case CA_KEY_DELETE:
 	case CA_KEY_INSTALL:
 	case CA_KEY_IMPORT:
+	case CA_SUBCA_CREATE:
+	case CA_SUBCA_REVOKE:
 		if (pledge("stdio proc exec rpath wpath cpath fattr tty", NULL)
 		    == -1)
 			err(1, "pledge");

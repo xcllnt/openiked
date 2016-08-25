@@ -42,7 +42,8 @@ enum token_type {
 	PEER,
 	ADDRESS,
 	FQDN,
-	PASSWORD
+	PASSWORD,
+	SUBCANAME
 };
 
 struct token {
@@ -74,6 +75,8 @@ static const struct token t_show_ca[];
 static const struct token t_show_ca_modifiers[];
 static const struct token t_show_ca_cert[];
 static const struct token t_opt_path[];
+static const struct token t_ca_subca[];
+static const struct token t_ca_subca_modifiers[];
 
 static const struct token t_main[] = {
 	{ KEYWORD,	"active",	ACTIVE,		NULL },
@@ -122,6 +125,7 @@ static const struct token t_ca_modifiers[] = {
 	{ KEYWORD,	"certificate",	CA_CERTIFICATE,	t_ca_cert },
 	{ KEYWORD,	"key",		NONE,		t_ca_key },
 	{ KEYWORD,	"export",	CA_EXPORT,	t_ca_export },
+	{ KEYWORD,	"subca",	CA_SUBCA,	t_ca_subca },
 	{ ENDTOKEN,	"",		NONE,		NULL }
 };
 
@@ -223,6 +227,17 @@ static const struct token t_show_ca_cert[] = {
 	{ ENDTOKEN,	"",		NONE,		NULL }
 };
 
+static const struct token t_ca_subca[] = {
+	{ SUBCANAME,	"", 		NONE,		t_ca_subca_modifiers },
+	{ ENDTOKEN,	"",		NONE,		NULL }
+};
+
+static const struct token t_ca_subca_modifiers[] = {
+	{ KEYWORD,	"create",	CA_SUBCA_CREATE,	t_ca_pass },
+	{ KEYWORD,	"revoke",	CA_SUBCA_REVOKE,	NULL },
+	{ ENDTOKEN,	"",		NONE,			NULL }
+};
+
 static struct parse_result	 res;
 
 const struct token		*match_token(char *, const struct token []);
@@ -315,6 +330,13 @@ match_token(char *word, const struct token table[])
 				t = &table[i];
 			}
 			break;
+		case SUBCANAME:
+			if (!match && word != NULL && strlen(word) > 0) {
+				res.subcaname = strdup(word);
+				match++;
+				t = &table[i];
+			}
+			break;
 		case PEER:
 			if (!match && word != NULL && strlen(word) > 0) {
 				res.peer = strdup(word);
@@ -377,6 +399,7 @@ show_valid_args(const struct token table[])
 			fprintf(stderr, "  <path>\n");
 			break;
 		case CANAME:
+		case SUBCANAME:
 			fprintf(stderr, "  <caname>\n");
 			break;
 		case PASSWORD:
