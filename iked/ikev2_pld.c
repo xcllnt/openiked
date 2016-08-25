@@ -843,17 +843,22 @@ ikev2_pld_cert(struct iked *env, struct ikev2_payload *pld,
 
 	certid = &msg->msg_parent->msg_cert;
 	if (certid->id_type) {
-		log_debug("%s: duplicate cert payload", __func__);
-		return (-1);
+		if (cert.cert_type != certid->id_type) {
+			log_debug("%s: duplicate cert payload", __func__);
+			return (-1);
+		}
+		if (ibuf_add(certid->id_buf, buf, len) != 0) {
+			log_debug("%s: failed to build cert chain", __func__);
+			return (-1);
+		}
+	} else {
+		if ((certid->id_buf = ibuf_new(buf, len)) == NULL) {
+			log_debug("%s: failed to save cert", __func__);
+			return (-1);
+		}
+		certid->id_type = cert.cert_type;
+		certid->id_offset = 0;
 	}
-
-	if ((certid->id_buf = ibuf_new(buf, len)) == NULL) {
-		log_debug("%s: failed to save cert", __func__);
-		return (-1);
-	}
-	certid->id_type = cert.cert_type;
-	certid->id_offset = 0;
-
 	return (0);
 }
 
