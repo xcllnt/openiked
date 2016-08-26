@@ -61,6 +61,7 @@
 #define PATH_TAR	"/bin/tar"
 #endif
 
+static struct ca *ca_issuer(struct ca *);
 static int ca_revoke_internal(struct ca *, char *);
 
 struct ca {
@@ -125,6 +126,15 @@ int		 expand_string(char *, size_t, const char *, const char *);
 int
 ca_delete(struct ca *ca)
 {
+	char		 path[PATH_MAX];
+	struct ca	*issuer;
+
+	issuer = ca_issuer(ca);
+	if (issuer) {
+		snprintf(path, sizeof(path), "%s/intermediates/%s",
+		    issuer->sslpath, ca->caname);
+		unlink(path);
+	}
 	return (rm_dir(ca->sslpath));
 }
 
@@ -446,7 +456,7 @@ ca_create_internal(struct ca *ca, struct ca *issuer)
 		ca_setenv("$ENV::CASERIAL", issuer->serial);
 		ca_setcnf(issuer, name);
 
-		snprintf(cmd, sizeof(cmd), "%s ca -config %s"
+		snprintf(cmd, sizeof(cmd), "%s ca -config %s -notext"
 		    " -keyfile %s/private/%s-ca.key -cert %s/%s-ca.crt"
 		    " -extfile %s -extensions x509v3_CA -out %s/%s.crt"
 		    " -in %s/private/%s.csr -passin file:%s -outdir %s"
@@ -480,8 +490,6 @@ ca_install(struct ca *ca, char *dir)
 	struct stat	 st;
 	char		 src[PATH_MAX];
 	char		 dst[PATH_MAX];
-	char		 buf[PATH_MAX];
-	char		*capath, *caname;
 	char		*p = NULL;
 
 	if (dir == NULL)
@@ -489,53 +497,34 @@ ca_install(struct ca *ca, char *dir)
 
 	ca_hier(dir);
 
-	capath = ca->sslpath;
-	caname = ca->caname;
-
- recurse:
-	snprintf(src, sizeof(src), "%s/%s-ca.crt", capath, caname);
-	if (stat(src, &st) == -1) {
-		printf("CA '%s' does not exist\n", caname);
-		goto fail;
-	}
-	snprintf(dst, sizeof(dst), "%s/ca/%s-ca.crt", dir, caname);
-	if (fcopy(src, dst, 0644) == 0)
-		printf("certificate for CA '%s' installed into %s\n",
-		    caname, dst);
-
-	snprintf(src, sizeof(src), "%s/%s-ca.crl", capath, caname);
-	if (stat(src, &st) == 0) {
-		snprintf(dst, sizeof(dst), "%s/crls/%s-ca.crl", dir, caname);
+	while (ca != NULL) {
+		snprintf(src, sizeof(src), "%s/%s-ca.crt", ca->sslpath,
+		    ca->caname);
+		if (stat(src, &st) == -1) {
+			printf("CA '%s' does not exist\n", ca->caname);
+			break;
+		}
+		snprintf(dst, sizeof(dst), "%s/ca/%s-ca.crt", dir,
+		    ca->caname);
 		if (fcopy(src, dst, 0644) == 0)
-			printf("CRL for CA '%s' installed to %s\n",
-			    caname, dst);
+			printf("certificate for CA '%s' installed into %s\n",
+			    ca->caname, dst);
+
+		snprintf(src, sizeof(src), "%s/%s-ca.crl", ca->sslpath,
+		    ca->caname);
+		if (stat(src, &st) == 0) {
+			snprintf(dst, sizeof(dst), "%s/crls/%s-ca.crl", dir,
+			    ca->caname);
+			if (fcopy(src, dst, 0644) == 0)
+				printf("CRL for CA '%s' installed to %s\n",
+				    ca->caname, dst);
+		}
+
+		ca = ca_issuer(ca);
 	}
 
-	snprintf(src, sizeof(src), "%s/issuer", capath);
-	if (lstat(src, &st) == -1) {
-		free(p);
-		return (0);
-	}
-	if (!S_ISLNK(st.st_mode)) {
-		printf("issuer for CA '%s' not a symlink\n", caname);
-		goto fail;
-	}
-	memset(buf, 0, sizeof(buf));
-	if (readlink(src, buf, sizeof(buf)) == -1) {
-		printf("unable to read issuer symlink for CA '%s'\n", caname);
-		goto fail;
-	}
-
-	capath = buf;
-	caname = strrchr(capath, '/');
-	if (caname == NULL)
-		abort();
-	caname++;
-	goto recurse;
-
- fail:
 	free(p);
-	return (1);
+	return ((ca == NULL) ? 0 : 1);
 }
 
 int
@@ -712,8 +701,6 @@ ca_export(struct ca *ca, char *keyname, char *myname, char *password)
 	char		 oname[PATH_MAX];
 	char		 src[PATH_MAX];
 	char		 dst[PATH_MAX];
-	char		 buf[PATH_MAX];
-	char		*capath, *caname;
 	char		*p;
 	char		 tpl[] = "/tmp/ikectl.XXXXXXXXXX";
 	unsigned int	 i;
@@ -794,49 +781,31 @@ ca_export(struct ca *ca, char *keyname, char *myname, char *password)
 		system(cmd);
 	}
 
-	capath = ca->sslpath;
-	caname = ca->caname;
+	while (ca != NULL) {
+		snprintf(cmd, sizeof(cmd), "env EXPASS=%s %s pkcs12 -export"
+		    " -caname '%s' -name '%s' -cacerts -nokeys"
+		    " -in %s/%s-ca.crt -out %s/export/%s-ca.pfx"
+		    " -passout env:EXPASS -passin file:%s", pass,
+		    PATH_OPENSSL, ca->caname, ca->caname, ca->sslpath,
+		    ca->caname, p, ca->caname, ca->passfile);
+		system(cmd);
 
- recurse:
-	snprintf(cmd, sizeof(cmd), "env EXPASS=%s %s pkcs12 -export"
-	    " -caname '%s' -name '%s' -cacerts -nokeys -in %s/%s-ca.crt"
-	    " -out %s/export/%s-ca.pfx -passout env:EXPASS -passin file:%s",
-	    pass, PATH_OPENSSL, caname, caname, capath, caname, p, caname,
-	    ca->passfile);
-	system(cmd);
-
-	snprintf(src, sizeof(src), "%s/%s-ca.crt", capath, caname);
-	snprintf(dst, sizeof(dst), "%s/ca/%s-ca.crt", p, caname);
-	fcopy(src, dst, 0644);
-
-	snprintf(src, sizeof(src), "%s/%s-ca.crl", capath, caname);
-	if (stat(src, &st) == 0) {
-		snprintf(dst, sizeof(dst), "%s/crls/%s-ca.crl", p, caname);
+		snprintf(src, sizeof(src), "%s/%s-ca.crt", ca->sslpath,
+		    ca->caname);
+		snprintf(dst, sizeof(dst), "%s/ca/%s-ca.crt", p, ca->caname);
 		fcopy(src, dst, 0644);
+
+		snprintf(src, sizeof(src), "%s/%s-ca.crl", ca->sslpath,
+		    ca->caname);
+		if (stat(src, &st) == 0) {
+			snprintf(dst, sizeof(dst), "%s/crls/%s-ca.crl", p,
+			    ca->caname);
+			fcopy(src, dst, 0644);
+		}
+
+		ca = ca_issuer(ca);
 	}
 
-	snprintf(src, sizeof(src), "%s/issuer", capath);
-	if (lstat(src, &st) == -1)
-		goto out;
-
-	if (!S_ISLNK(st.st_mode)) {
-		printf("issuer for CA '%s' not a symlink\n", caname);
-		goto fail;
-	}
-	memset(buf, 0, sizeof(buf));
-	if (readlink(src, buf, sizeof(buf)) == -1) {
-		printf("unable to read issuer symlink for CA '%s'\n", caname);
-		goto fail;
-	}
-
-	capath = buf;
-	caname = strrchr(capath, '/');
-	if (caname == NULL)
-		abort();
-	caname++;
-	goto recurse;
-
- out:
 	if (stat(PATH_TAR, &st) == 0) {
 		snprintf(cmd, sizeof(cmd), "%s -zcf %s.tgz -C %s .",
 		    PATH_TAR, oname, p);
@@ -1107,6 +1076,49 @@ ca_setup(char *caname, int create, int quiet, char *pass)
 	if (create && stat(ca->passfile, &st) == -1 && errno == ENOENT)
 		ca_newpass(ca->passfile, pass);
 
+	return (ca);
+}
+
+/*
+ * Return CA object for issuing CA, or NULL otherwise.
+ */
+static struct ca *
+ca_issuer(struct ca *subca)
+{
+	struct stat	 st;
+	char		 issuer[PATH_MAX];
+	char		 sslpath[PATH_MAX];
+	struct ca	*ca;
+	char		*caname;
+
+	snprintf(issuer, sizeof(issuer), "%s/issuer", subca->sslpath);
+	if (lstat(issuer, &st) == -1)
+		return (NULL);
+	if (!S_ISLNK(st.st_mode)) {
+		printf("issuer for CA '%s' is not a symlink\n",
+		    subca->caname);
+		return (NULL);
+	}
+	memset(sslpath, 0, sizeof(sslpath));
+	if (readlink(issuer, sslpath, sizeof(sslpath)) == -1) {
+		printf("unable to read issuer symlink for CA '%s'\n",
+		    subca->caname);
+		return (NULL);
+	}
+
+	/* Create CA object */
+	ca = calloc(1, sizeof(struct ca));
+	if (ca == NULL)
+		err(1, "calloc");
+
+	strlcpy(ca->sslpath, sslpath, sizeof(ca->sslpath));
+	snprintf(ca->passfile, sizeof(ca->passfile), "%s/ikeca.passwd",
+	    sslpath);
+
+	caname = strrchr(sslpath, '/');
+	if (caname == NULL || caname[0] == '\0')
+		err(1, "strrchr");
+	ca->caname = strdup(caname + 1);
 	return (ca);
 }
 
