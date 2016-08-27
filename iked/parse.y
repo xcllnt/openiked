@@ -1494,9 +1494,9 @@ parse_config(const char *filename, struct iked *x_env)
 	errors = file->errors;
 	popfile();
 
-	env->sc_passive = passive ? 1 : 0;
-	env->sc_decoupled = decouple ? 1 : 0;
-	env->sc_ocsp_url = ocsp_url;
+	env->sc_config.cfg_passive = passive ? 1 : 0;
+	env->sc_config.cfg_decoupled = decouple ? 1 : 0;
+	env->sc_config.cfg_ocsp_url = ocsp_url;
 
 	if (!rules)
 		log_warnx("%s: no valid configuration rules found",
@@ -2226,7 +2226,7 @@ print_policy(struct iked_policy *pol)
 	struct iked_proposal	*pp;
 	struct iked_transform	*xform;
 	struct iked_flow	*flow;
-	struct iked_cfg		*cfg;
+	struct iked_ikecfg	*cfg;
 	unsigned int		 i, j;
 	const struct ipsec_xf	*xfs = NULL;
 
@@ -2450,7 +2450,7 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 	struct iked_transform	 ikexforms[64], ipsecxforms[64];
 	struct iked_flow	 flows[64];
 	static unsigned int	 policy_id = 0;
-	struct iked_cfg		*cfg;
+	struct iked_ikecfg	*cfg;
 
 	bzero(&pol, sizeof(pol));
 	bzero(&prop, sizeof(prop));

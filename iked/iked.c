@@ -238,8 +238,8 @@ parent_configure(struct iked *env)
 	if (pledge("stdio rpath proc dns inet route sendfd", NULL) == -1)
 		fatal("pledge");
 
-	config_setcoupled(env, env->sc_decoupled ? 0 : 1);
-	config_setmode(env, env->sc_passive ? 1 : 0);
+	config_setcoupled(env, env->sc_config.cfg_decoupled ? 0 : 1);
+	config_setmode(env, env->sc_config.cfg_passive ? 1 : 0);
 	config_setocsp(env);
 
 	return (0);
@@ -270,8 +270,8 @@ parent_reload(struct iked *env, int reset, const char *filename)
 	/* Re-compile policies and skip steps */
 	config_setcompile(env, PROC_IKEV2);
 
-	config_setcoupled(env, env->sc_decoupled ? 0 : 1);
-	config_setmode(env, env->sc_passive ? 1 : 0);
+	config_setcoupled(env, env->sc_config.cfg_decoupled ? 0 : 1);
+	config_setmode(env, env->sc_config.cfg_passive ? 1 : 0);
 	config_setocsp(env);
 }
 

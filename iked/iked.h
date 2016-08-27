@@ -208,7 +208,7 @@ struct iked_auth {
 	uint8_t		auth_data[IKED_PSK_SIZE];
 };
 
-struct iked_cfg {
+struct iked_ikecfg {
 	uint8_t				 cfg_action;
 	uint16_t			 cfg_type;
 	union {
@@ -273,7 +273,7 @@ struct iked_policy {
 	struct iked_flows		 pol_flows;
 	size_t				 pol_nflows;
 
-	struct iked_cfg			 pol_cfg[IKED_CFG_MAX];
+	struct iked_ikecfg		 pol_cfg[IKED_CFG_MAX];
 	unsigned int			 pol_ncfg;
 
 	uint32_t			 pol_rekey;	/* ike SA lifetime */
@@ -573,12 +573,17 @@ TAILQ_HEAD(iked_ocsp_requests, iked_ocsp_entry);
  * Daemon configuration
  */
 
+struct iked_config {
+	char				*cfg_ocsp_url;
+	uint8_t				 cfg_passive;
+	uint8_t				 cfg_decoupled;
+};
+
 struct iked {
 	char				 sc_conffile[PATH_MAX];
+	struct iked_config		 sc_config;
 
 	uint32_t			 sc_opts;
-	uint8_t				 sc_passive;
-	uint8_t				 sc_decoupled;
 
 	struct iked_policies		 sc_policies;
 	struct iked_policy		*sc_defaultcon;
@@ -606,7 +611,6 @@ struct iked {
 	struct privsep			 sc_ps;
 
 	struct iked_ocsp_requests	 sc_ocsp;
-	char				*sc_ocsp_url;
 
 	struct iked_addrpool		 sc_addrpool;
 	struct iked_addrpool6		 sc_addrpool6;

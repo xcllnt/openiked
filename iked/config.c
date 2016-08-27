@@ -447,14 +447,14 @@ config_getmode(struct iked *env, unsigned int type)
 	uint8_t		 old;
 	unsigned char	*mode[] = { "active", "passive" };
 
-	old = env->sc_passive ? 1 : 0;
-	env->sc_passive = type == IMSG_CTL_PASSIVE ? 1 : 0;
+	old = env->sc_config.cfg_passive ? 1 : 0;
+	env->sc_config.cfg_passive = (type == IMSG_CTL_PASSIVE) ? 1 : 0;
 
-	if (old == env->sc_passive)
+	if (old == env->sc_config.cfg_passive)
 		return (0);
 
-	log_debug("%s: mode %s -> %s", __func__,
-	    mode[old], mode[env->sc_passive]);
+	log_debug("%s: mode %s -> %s", __func__, mode[old],
+	    mode[env->sc_config.cfg_passive]);
 
 	return (0);
 }
@@ -765,11 +765,12 @@ config_getcompile(struct iked *env, struct imsg *imsg)
 int
 config_setocsp(struct iked *env)
 {
+	
 	if (env->sc_opts & IKED_OPT_NOACTION)
 		return (0);
-	proc_compose(&env->sc_ps, PROC_CERT,
-	    IMSG_OCSP_URL, env->sc_ocsp_url,
-	    env->sc_ocsp_url ? strlen(env->sc_ocsp_url) : 0);
+	proc_compose(&env->sc_ps, PROC_CERT, IMSG_OCSP_URL,
+	    env->sc_config.cfg_ocsp_url, (env->sc_config.cfg_ocsp_url != NULL)
+	    ? strlen(env->sc_config.cfg_ocsp_url) : 0);
 
 	return (0);
 }
@@ -777,12 +778,15 @@ config_setocsp(struct iked *env)
 int
 config_getocsp(struct iked *env, struct imsg *imsg)
 {
-	free(env->sc_ocsp_url);
+
+	free(env->sc_config.cfg_ocsp_url);
 	if (IMSG_DATA_SIZE(imsg) > 0)
-		env->sc_ocsp_url = get_string(imsg->data, IMSG_DATA_SIZE(imsg));
+		env->sc_config.cfg_ocsp_url = get_string(imsg->data,
+		    IMSG_DATA_SIZE(imsg));
 	else
-		env->sc_ocsp_url = NULL;
+		env->sc_config.cfg_ocsp_url = NULL;
 	log_debug("%s: ocsp_url %s", __func__,
-	    env->sc_ocsp_url ? env->sc_ocsp_url : "none");
+	    (env->sc_config.cfg_ocsp_url != NULL)
+	    ? env->sc_config.cfg_ocsp_url : "none");
 	return (0);
 }

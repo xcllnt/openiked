@@ -77,13 +77,14 @@ ocsp_connect(struct iked *env)
 	char			*host = NULL, *port = NULL, *path = NULL;
 	int			use_ssl, fd = -1, ret = -1, error;
 
-	if (env->sc_ocsp_url == 0) {
+	if (env->sc_config.cfg_ocsp_url == NULL) {
 		log_warnx("%s: no ocsp url", __func__);
 		goto done;
 	}
-	if (!OCSP_parse_url(env->sc_ocsp_url, &host, &port, &path, &use_ssl)) {
+	if (!OCSP_parse_url(env->sc_config.cfg_ocsp_url, &host, &port, &path,
+	    &use_ssl)) {
 		log_warnx("%s: error parsing OCSP-request-URL: %s", __func__,
-		    env->sc_ocsp_url);
+		    env->sc_config.cfg_ocsp_url);
 		goto done;
 	}
 

@@ -1771,7 +1771,7 @@ ikev2_add_cp(struct iked *env, struct iked_sa *sa, struct ibuf *buf)
 	struct iked_policy	*pol = sa->sa_policy;
 	struct ikev2_cp		*cp;
 	struct ikev2_cfg	*cfg;
-	struct iked_cfg		*ikecfg;
+	struct iked_ikecfg	*ikecfg;
 	unsigned int		 i;
 	uint32_t		 mask4;
 	size_t			 len;
@@ -4936,7 +4936,7 @@ ikev2_acquire_sa(struct iked *env, struct iked_flow *acquire)
 	struct iked_sa		*sa;
 	struct iked_policy	 pol, *p = NULL;
 
-	if (env->sc_passive)
+	if (env->sc_config.cfg_passive)
 		return (0);
 
 	/* First try to find an active flow with IKE SA */
@@ -5193,7 +5193,7 @@ ikev2_print_id(struct iked_id *id, char *idstr, size_t idstrlen)
 int
 ikev2_cp_setaddr(struct iked *env, struct iked_sa *sa, sa_family_t family)
 {
-	struct iked_cfg		*ikecfg = NULL;
+	struct iked_ikecfg	*ikecfg = NULL;
 	struct iked_policy	*pol = sa->sa_policy;
 	struct sockaddr_in	*in4 = NULL, *cfg4 = NULL;
 	struct sockaddr_in6	*in6 = NULL, *cfg6 = NULL;

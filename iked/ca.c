@@ -375,7 +375,7 @@ ca_getcert(struct iked *env, struct imsg *imsg)
 	switch (type) {
 	case IKEV2_CERT_X509_CERT:
 		ret = ca_validate_cert(env, &id, ptr, len);
-		if (ret == 0 && env->sc_ocsp_url) {
+		if (ret == 0 && env->sc_config.cfg_ocsp_url) {
 			ret = ocsp_validate_cert(env, &id, ptr, len, sh, type);
 			if (ret == 0)
 				return (0);
