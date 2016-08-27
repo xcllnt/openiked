@@ -575,6 +575,8 @@ RB_HEAD(iked_users, iked_user);
 
 struct iked_config {
 	struct iked_users		 cfg_users;
+	struct iked_policies		 cfg_policies;
+	struct iked_policy		*cfg_defpolicy;
 	char				*cfg_ocsp_url;
 	uint8_t				 cfg_passive;
 	uint8_t				 cfg_decoupled;
@@ -585,9 +587,6 @@ struct iked {
 	struct iked_config		 sc_config;
 
 	uint32_t			 sc_opts;
-
-	struct iked_policies		 sc_policies;
-	struct iked_policy		*sc_defaultcon;
 
 	struct iked_sas			 sc_sas;
 	struct iked_activesas		 sc_activesas;

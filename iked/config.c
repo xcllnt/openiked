@@ -176,7 +176,7 @@ config_free_policy(struct iked *env, struct iked_policy *pol)
 	if (pol->pol_flags & IKED_POLICY_REFCNT)
 		goto remove;
 
-	TAILQ_REMOVE(&env->sc_policies, pol, pol_entry);
+	TAILQ_REMOVE(&env->sc_config.cfg_policies, pol, pol_entry);
 
 	TAILQ_FOREACH(sa, &pol->pol_sapeers, sa_peer_entry) {
 		/* Remove from the policy list, but keep for existing SAs */
@@ -481,7 +481,7 @@ config_getreset(struct iked *env, struct imsg *imsg)
 	if (mode == RESET_ALL || mode == RESET_POLICY ||
 	    mode == RESET_RELOAD) {
 		log_debug("%s: flushing policies", __func__);
-		for (pol = TAILQ_FIRST(&env->sc_policies);
+		for (pol = TAILQ_FIRST(&env->sc_config.cfg_policies);
 		    pol != NULL; pol = nextpol) {
 			nextpol = TAILQ_NEXT(pol, pol_entry);
 			config_free_policy(env, pol);
@@ -729,13 +729,13 @@ config_getpolicy(struct iked *env, struct imsg *imsg)
 			free(flow);
 	}
 
-	TAILQ_INSERT_TAIL(&env->sc_policies, pol, pol_entry);
+	TAILQ_INSERT_TAIL(&env->sc_config.cfg_policies, pol, pol_entry);
 
 	if (pol->pol_flags & IKED_POLICY_DEFAULT) {
 		/* Only one default policy, just free/unref the old one */
-		if (env->sc_defaultcon != NULL)
-			config_free_policy(env, env->sc_defaultcon);
-		env->sc_defaultcon = pol;
+		if (env->sc_config.cfg_defpolicy != NULL)
+			config_free_policy(env, env->sc_config.cfg_defpolicy);
+		env->sc_config.cfg_defpolicy = pol;
 	}
 
 	return (0);
@@ -758,7 +758,7 @@ config_getcompile(struct iked *env, struct imsg *imsg)
 	 * Do any necessary steps after configuration, for now we
 	 * only need to compile the skip steps.
 	 */
-	policy_calc_skip_steps(&env->sc_policies);
+	policy_calc_skip_steps(&env->sc_config.cfg_policies);
 
 	log_debug("%s: compilation done", __func__);
 	return (0);

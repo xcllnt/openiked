@@ -804,7 +804,7 @@ ikev2_init_ike_sa(struct iked *env, void *arg)
 	struct iked_policy	*pol;
 	unsigned int		 mode;
 
-	TAILQ_FOREACH(pol, &env->sc_policies, pol_entry) {
+	TAILQ_FOREACH(pol, &env->sc_config.cfg_policies, pol_entry) {
 		if (pol->pol_flags & IKED_POLICY_RETRY) {
 			pol->pol_flags &= ~IKED_POLICY_RETRY;
 			log_debug("%s: \"%s\": retrying", __func__,

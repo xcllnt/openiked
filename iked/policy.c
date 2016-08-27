@@ -45,7 +45,7 @@ static __inline int
 void
 policy_init(struct iked *env)
 {
-	TAILQ_INIT(&env->sc_policies);
+	TAILQ_INIT(&env->sc_config.cfg_policies);
 	TAILQ_INIT(&env->sc_ocsp);
 	RB_INIT(&env->sc_config.cfg_users);
 	RB_INIT(&env->sc_sas);
@@ -85,7 +85,7 @@ policy_lookup(struct iked *env, struct iked_message *msg)
 		goto found;
 
 	/* No matching policy found, try the default */
-	if ((msg->msg_policy = env->sc_defaultcon) != NULL)
+	if ((msg->msg_policy = env->sc_config.cfg_defpolicy) != NULL)
 		goto found;
 
 	/* No policy found */
@@ -131,7 +131,7 @@ policy_test(struct iked *env, struct iked_policy *key)
 	struct iked_flow	*flow = NULL, *flowkey;
 	unsigned int		 cnt = 0;
 
-	p = TAILQ_FIRST(&env->sc_policies);
+	p = TAILQ_FIRST(&env->sc_config.cfg_policies);
 	while (p != NULL) {
 		cnt++;
 		if (p->pol_flags & IKED_POLICY_SKIP)
