@@ -510,13 +510,6 @@ struct iked_message {
 #define IKED_RETRANSMIT_TRIES	 5		/* try 5 times */
 };
 
-struct iked_user {
-	char			 usr_name[LOGIN_NAME_MAX];
-	char			 usr_pass[IKED_PASSWORD_SIZE];
-	RB_ENTRY(iked_user)	 usr_entry;
-};
-RB_HEAD(iked_users, iked_user);
-
 struct privsep_pipes {
 	int				*pp_pipes[PROC_MAX];
 };
@@ -573,7 +566,15 @@ TAILQ_HEAD(iked_ocsp_requests, iked_ocsp_entry);
  * Daemon configuration
  */
 
+struct iked_user {
+	char			 usr_name[LOGIN_NAME_MAX];
+	char			 usr_pass[IKED_PASSWORD_SIZE];
+	RB_ENTRY(iked_user)	 usr_entry;
+};
+RB_HEAD(iked_users, iked_user);
+
 struct iked_config {
+	struct iked_users		 cfg_users;
 	char				*cfg_ocsp_url;
 	uint8_t				 cfg_passive;
 	uint8_t				 cfg_decoupled;
@@ -591,7 +592,6 @@ struct iked {
 	struct iked_sas			 sc_sas;
 	struct iked_activesas		 sc_activesas;
 	struct iked_flows		 sc_activeflows;
-	struct iked_users		 sc_users;
 
 	void				*sc_priv;	/* per-process */
 

@@ -47,7 +47,7 @@ policy_init(struct iked *env)
 {
 	TAILQ_INIT(&env->sc_policies);
 	TAILQ_INIT(&env->sc_ocsp);
-	RB_INIT(&env->sc_users);
+	RB_INIT(&env->sc_config.cfg_users);
 	RB_INIT(&env->sc_sas);
 	RB_INIT(&env->sc_activesas);
 	RB_INIT(&env->sc_activeflows);
@@ -568,7 +568,7 @@ user_lookup(struct iked *env, const char *user)
 	    sizeof(key.usr_name)) >= sizeof(key.usr_name))
 		return (NULL);
 
-	return (RB_FIND(iked_users, &env->sc_users, &key));
+	return (RB_FIND(iked_users, &env->sc_config.cfg_users, &key));
 }
 
 static __inline int

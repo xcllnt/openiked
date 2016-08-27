@@ -394,7 +394,8 @@ config_new_user(struct iked *env, struct iked_user *new)
 
 	memcpy(usr, new, sizeof(*usr));
 
-	if ((old = RB_INSERT(iked_users, &env->sc_users, usr)) != NULL) {
+	old = RB_INSERT(iked_users, &env->sc_config.cfg_users, usr);
+	if (old != NULL) {
 		/* Update the password of an existing user*/
 		memcpy(old, new, sizeof(*old));
 
@@ -499,10 +500,11 @@ config_getreset(struct iked *env, struct imsg *imsg)
 
 	if (mode == RESET_ALL || mode == RESET_USER) {
 		log_debug("%s: flushing users", __func__);
-		for (usr = RB_MIN(iked_users, &env->sc_users);
+		for (usr = RB_MIN(iked_users, &env->sc_config.cfg_users);
 		    usr != NULL; usr = nextusr) {
-			nextusr = RB_NEXT(iked_users, &env->sc_users, usr);
-			RB_REMOVE(iked_users, &env->sc_users, usr);
+			nextusr = RB_NEXT(iked_users,
+			    &env->sc_config.cfg_users, usr);
+			RB_REMOVE(iked_users, &env->sc_config.cfg_users, usr);
 			free(usr);
 		}
 	}
