@@ -171,9 +171,16 @@ ca_dispatch_parent(int fd, struct privsep_proc *p, struct imsg *imsg)
 	case IMSG_CTL_RESET:
 		IMSG_SIZE_CHECK(imsg, &mode);
 		memcpy(&mode, imsg->data, sizeof(mode));
-		if (mode == RESET_ALL || mode == RESET_CA) {
+		switch (mode) {
+		case RESET_RELOAD:
+		case RESET_ALL:
+		case RESET_CA:
 			log_debug("%s: config reload", __func__);
 			ca_reset(&env->sc_ps, p, store);
+			break;
+		default:
+			/* Nothing to do */
+			break;
 		}
 		break;
 	case IMSG_OCSP_FD:

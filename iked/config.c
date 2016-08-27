@@ -477,7 +477,8 @@ config_getreset(struct iked *env, struct imsg *imsg)
 	IMSG_SIZE_CHECK(imsg, &mode);
 	memcpy(&mode, imsg->data, sizeof(mode));
 
-	if (mode == RESET_ALL || mode == RESET_POLICY) {
+	if (mode == RESET_ALL || mode == RESET_POLICY ||
+	    mode == RESET_RELOAD) {
 		log_debug("%s: flushing policies", __func__);
 		for (pol = TAILQ_FIRST(&env->sc_policies);
 		    pol != NULL; pol = nextpol) {

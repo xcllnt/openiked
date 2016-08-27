@@ -248,31 +248,31 @@ parent_configure(struct iked *env)
 void
 parent_reload(struct iked *env, int reset, const char *filename)
 {
+
 	/* Switch back to the default config file */
 	if (filename == NULL || *filename == '\0')
 		filename = env->sc_conffile;
 
 	log_debug("%s: level %d config file %s", __func__, reset, filename);
 
-	if (reset == RESET_RELOAD) {
-		config_setreset(env, RESET_POLICY, PROC_IKEV2);
-		config_setreset(env, RESET_CA, PROC_CERT);
+	config_setreset(env, reset, PROC_IKEV2);
+	config_setreset(env, reset, PROC_CERT);
 
-		if (parse_config(filename, env) == -1) {
-			log_debug("%s: failed to load config file %s",
-			    __func__, filename);
-		}
+	if (reset != RESET_RELOAD)
+		return;
 
-		/* Re-compile policies and skip steps */
-		config_setcompile(env, PROC_IKEV2);
-
-		config_setcoupled(env, env->sc_decoupled ? 0 : 1);
-		config_setmode(env, env->sc_passive ? 1 : 0);
-		config_setocsp(env);
-	} else {
-		config_setreset(env, reset, PROC_IKEV2);
-		config_setreset(env, reset, PROC_CERT);
+	if (parse_config(filename, env) == -1) {
+		log_debug("%s: failed to load config file %s",
+		    __func__, filename);
+		return;
 	}
+
+	/* Re-compile policies and skip steps */
+	config_setcompile(env, PROC_IKEV2);
+
+	config_setcoupled(env, env->sc_decoupled ? 0 : 1);
+	config_setmode(env, env->sc_passive ? 1 : 0);
+	config_setocsp(env);
 }
 
 void
@@ -291,7 +291,7 @@ parent_sig_handler(int sig, short event, void *arg)
 		 * This is safe because libevent uses async signal handlers
 		 * that run in the event loop and not in signal context.
 		 */
-		parent_reload(ps->ps_env, 0, NULL);
+		parent_reload(ps->ps_env, RESET_RELOAD, NULL);
 		break;
 	case SIGPIPE:
 		log_info("%s: ignoring SIGPIPE", __func__);
@@ -389,7 +389,7 @@ parent_dispatch_control(int fd, struct privsep_proc *p, struct imsg *imsg)
 	case IMSG_CTL_RELOAD:
 		if (IMSG_DATA_SIZE(imsg) > 0)
 			str = get_string(imsg->data, IMSG_DATA_SIZE(imsg));
-		parent_reload(env, 0, str);
+		parent_reload(env, RESET_RELOAD, str);
 		free(str);
 		break;
 	default:
