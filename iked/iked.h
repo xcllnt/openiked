@@ -578,7 +578,7 @@ struct iked_config {
 	struct iked_policies		 cfg_policies;
 	struct iked_policy		*cfg_defpolicy;
 	char				*cfg_ocsp_url;
-	u_int				 cfg_rules;
+	unsigned int			 cfg_rules;
 	uint8_t				 cfg_passive;
 	uint8_t				 cfg_decoupled;
 };
@@ -635,6 +635,7 @@ void	 control_cleanup(struct control_sock *);
 /* config.c */
 void	 config_init(struct iked_config *);
 void	 config_cleanup(struct iked_config *);
+int	 config_apply(struct iked *, struct iked_config *);
 struct iked_policy *
 	 config_new_policy(struct iked *);
 void	 config_free_kex(struct iked_kex *);
