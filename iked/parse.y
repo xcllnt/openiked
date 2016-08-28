@@ -87,12 +87,8 @@ char		*symget(const char *);
 
 #define KEYSIZE_LIMIT	1024
 
-static struct iked	*env = NULL;
-static int		 debug = 0;
-static int		 rules = 0;
-static int		 passive = 0;
-static int		 decouple = 0;
-static char		*ocsp_url = NULL;
+static struct iked_config	 config;
+static int			 debug = 0;
 
 struct ipsec_xf {
 	const char	*name;
@@ -438,12 +434,13 @@ include		: INCLUDE STRING		{
 		}
 		;
 
-set		: SET ACTIVE	{ passive = 0; }
-		| SET PASSIVE	{ passive = 1; }
-		| SET COUPLE	{ decouple = 0; }
-		| SET DECOUPLE	{ decouple = 1; }
+set		: SET ACTIVE	{ config.cfg_passive = 0; }
+		| SET PASSIVE	{ config.cfg_passive = 1; }
+		| SET COUPLE	{ config.cfg_decoupled = 0; }
+		| SET DECOUPLE	{ config.cfg_decoupled = 1; }
 		| SET OCSP STRING		{
-			if ((ocsp_url = strdup($3)) == NULL) {
+			config.cfg_ocsp_url = strdup($3);
+			if (config.cfg_ocsp_url == NULL) {
 				yyerror("cannot set ocsp_url");
 				YYERROR;
 			}
@@ -1473,50 +1470,45 @@ popfile(void)
 	return (EOF);
 }
 
-int
-parse_config(const char *filename, struct iked *x_env)
+struct iked_config *
+parse_config(const char *filename, struct iked *env)
 {
 	struct sym	*sym;
 	int		 errors = 0;
 
-	env = x_env;
-	rules = 0;
-
-	if ((file = pushfile(filename, 1)) == NULL)
-		return (-1);
-
-	decouple = passive = 0;
-
+	config_init(&config);
 	if (env->sc_opts & IKED_OPT_PASSIVE)
-		passive = 1;
+		config.cfg_passive = 1;
 
+	file = pushfile(filename, 1);
+	if (file == NULL)
+		return (NULL);
 	yyparse();
 	errors = file->errors;
 	popfile();
 
-	env->sc_config.cfg_passive = passive ? 1 : 0;
-	env->sc_config.cfg_decoupled = decouple ? 1 : 0;
-	env->sc_config.cfg_ocsp_url = ocsp_url;
+	/*
+	 * If we have errors, cleanup and return NULL
+	 */
+	if (errors) {
+		config_cleanup(&config);
+		return (NULL);
+	}
 
-	if (!rules)
-		log_warnx("%s: no valid configuration rules found",
-		    filename);
-	else
-		log_debug("%s: loaded %d configuration rules",
-		    filename, rules);
+	log_info("%s: loaded %u configuration rule(s)", filename,
+	    config.cfg_rules);
 
 	/* Free macros and check which have not been used. */
 	while ((sym = TAILQ_FIRST(&symhead))) {
 		if (!sym->used)
-			log_debug("warning: macro '%s' not "
-			    "used\n", sym->nam);
+			log_debug("warning: macro '%s' not used\n", sym->nam);
 		free(sym->nam);
 		free(sym->val);
 		TAILQ_REMOVE(&symhead, sym, entry);
 		free(sym);
 	}
 
-	return (errors ? -1 : 0);
+	return (&config);
 }
 
 int
@@ -2457,7 +2449,7 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 	bzero(idstr, sizeof(idstr));
 
 	pol.pol_id = ++policy_id;
-	pol.pol_certreqtype = env->sc_certreqtype;
+	pol.pol_certreqtype = IKEV2_CERT_NONE;
 	pol.pol_af = af;
 	pol.pol_saproto = saproto;
 	pol.pol_ipproto = ipproto;
@@ -2714,32 +2706,39 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 	if (check_pubkey(idstr, idtype) != -1)
 		pol.pol_certreqtype = IKEV2_CERT_RSA_KEY;
 
-	config_setpolicy(env, &pol, PROC_IKEV2);
-
-	rules++;
+	config.cfg_rules++;
 	return (0);
 }
 
 int
 create_user(const char *user, const char *pass)
 {
-	struct iked_user	 usr;
+	struct iked_user	*usr, *old;
 
-	bzero(&usr, sizeof(usr));
+	usr = calloc(1, sizeof(*usr));
+	if (usr == NULL) {
+		yyerror("unable to allocate memory");
+		return (-1);
+	}
 
-	if (*user == '\0' || (strlcpy(usr.usr_name, user,
-	    sizeof(usr.usr_name)) >= sizeof(usr.usr_name))) {
+	if (*user == '\0' ||
+	    strlcpy(usr->usr_name, user, sizeof(usr->usr_name)) >=
+	    sizeof(usr->usr_name)) {
 		yyerror("invalid user name");
 		return (-1);
 	}
-	if (*pass == '\0' || (strlcpy(usr.usr_pass, pass,
-	    sizeof(usr.usr_pass)) >= sizeof(usr.usr_pass))) {
+	if (*pass == '\0' ||
+	    strlcpy(usr->usr_pass, pass, sizeof(usr->usr_pass)) >=
+	    sizeof(usr->usr_pass)) {
 		yyerror("invalid password");
 		return (-1);
 	}
 
-	config_setuser(env, &usr, PROC_IKEV2);
-
-	rules++;
+	old = RB_INSERT(iked_users, &config.cfg_users, usr);
+	if (old != NULL) {
+		yyerror("user already defined");
+		free(usr);
+		return (-1);
+	}
 	return (0);
 }

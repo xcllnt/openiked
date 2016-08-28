@@ -578,6 +578,7 @@ struct iked_config {
 	struct iked_policies		 cfg_policies;
 	struct iked_policy		*cfg_defpolicy;
 	char				*cfg_ocsp_url;
+	u_int				 cfg_rules;
 	uint8_t				 cfg_passive;
 	uint8_t				 cfg_decoupled;
 };
@@ -632,6 +633,8 @@ int	 control_listen(struct control_sock *);
 void	 control_cleanup(struct control_sock *);
 
 /* config.c */
+void	 config_init(struct iked_config *);
+void	 config_cleanup(struct iked_config *);
 struct iked_policy *
 	 config_new_policy(struct iked *);
 void	 config_free_kex(struct iked_kex *);
@@ -649,7 +652,7 @@ struct iked_proposal *
 	 config_add_proposal(struct iked_proposals *, unsigned int,
 	    unsigned int);
 void	 config_free_proposals(struct iked_proposals *, unsigned int);
-void	 config_free_flows(struct iked *, struct iked_flows *);
+void	 config_free_flows(struct iked_flows *);
 void	 config_free_childsas(struct iked *, struct iked_childsas *,
 	    struct iked_spi *, struct iked_spi *);
 struct iked_transform *
@@ -987,7 +990,7 @@ int	 ocsp_validate_cert(struct iked *, struct iked_static_id *,
     void *, size_t, struct iked_sahdr, uint8_t);
 
 /* parse.y */
-int	 parse_config(const char *, struct iked *);
+struct iked_config *parse_config(const char *, struct iked *);
 void	 print_user(struct iked_user *);
 void	 print_policy(struct iked_policy *);
 size_t	 keylength_xf(unsigned int, unsigned int, unsigned int);

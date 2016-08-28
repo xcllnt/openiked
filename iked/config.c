@@ -34,6 +34,33 @@
 #include "iked.h"
 #include "ikev2.h"
 
+void
+config_init(struct iked_config *config)
+{
+
+	memset(config, 0, sizeof(*config));
+	RB_INIT(&config->cfg_users);
+	TAILQ_INIT(&config->cfg_policies);
+}
+
+void
+config_cleanup(struct iked_config *config)
+{
+	struct iked_policy	*pol;
+	struct iked_user	*usr;
+
+	while ((pol = TAILQ_FIRST(&config->cfg_policies)) != NULL) {
+		TAILQ_REMOVE(&config->cfg_policies, pol, pol_entry);
+		config_free_flows(&pol->pol_flows);
+		config_free_proposals(&pol->pol_proposals, 0);
+		free(pol);
+	}
+	while ((usr = RB_MIN(iked_users, &config->cfg_users)) != NULL) {
+		RB_REMOVE(iked_users, &config->cfg_users, usr);
+		free(usr);
+	}
+}
+
 struct iked_sa *
 config_new_sa(struct iked *env, int initiator)
 {
@@ -192,7 +219,7 @@ config_free_policy(struct iked *env, struct iked_policy *pol)
 
  remove:
 	config_free_proposals(&pol->pol_proposals, 0);
-	config_free_flows(env, &pol->pol_flows);
+	config_free_flows(&pol->pol_flows);
 	free(pol);
 }
 
@@ -241,7 +268,7 @@ config_free_proposals(struct iked_proposals *head, unsigned int proto)
 }
 
 void
-config_free_flows(struct iked *env, struct iked_flows *head)
+config_free_flows(struct iked_flows *head)
 {
 	struct iked_flow	*flow, *next;
 

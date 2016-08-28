@@ -45,9 +45,7 @@ static __inline int
 void
 policy_init(struct iked *env)
 {
-	TAILQ_INIT(&env->sc_config.cfg_policies);
 	TAILQ_INIT(&env->sc_ocsp);
-	RB_INIT(&env->sc_config.cfg_users);
 	RB_INIT(&env->sc_sas);
 	RB_INIT(&env->sc_activesas);
 	RB_INIT(&env->sc_activeflows);

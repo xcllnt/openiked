@@ -125,6 +125,7 @@ main(int argc, char *argv[])
 	if (strlcpy(env->sc_conffile, conffile, PATH_MAX) >= PATH_MAX)
 		errx(1, "config file exceeds PATH_MAX");
 
+	config_init(&env->sc_config);
 	ca_sslinit();
 	policy_init(env);
 
@@ -183,9 +184,11 @@ main(int argc, char *argv[])
 int
 parent_configure(struct iked *env)
 {
-	struct sockaddr_storage	 ss;
+	struct sockaddr_storage	  ss;
+	struct iked_config	 *config;
 
-	if (parse_config(env->sc_conffile, env) == -1) {
+	config = parse_config(env->sc_conffile, env);
+	if (config == NULL) {
 		proc_kill(&env->sc_ps);
 		exit(1);
 	}
@@ -198,9 +201,6 @@ parent_configure(struct iked *env)
 
 	env->sc_pfkey = -1;
 	config_setpfkey(env, PROC_IKEV2);
-
-	/* Now compile the policies and calculate skip steps */
-	config_setcompile(env, PROC_IKEV2);
 
 	bzero(&ss, sizeof(ss));
 	ss.ss_family = AF_INET;
@@ -238,6 +238,11 @@ parent_configure(struct iked *env)
 	if (pledge("stdio rpath proc dns inet route sendfd", NULL) == -1)
 		fatal("pledge");
 
+	/* MHM Morph previous config into new config */
+
+	/* Now compile the policies and calculate skip steps */
+	config_setcompile(env, PROC_IKEV2);
+
 	config_setcoupled(env, env->sc_config.cfg_decoupled ? 0 : 1);
 	config_setmode(env, env->sc_config.cfg_passive ? 1 : 0);
 	config_setocsp(env);
@@ -248,6 +253,7 @@ parent_configure(struct iked *env)
 void
 parent_reload(struct iked *env, int reset, const char *filename)
 {
+	struct iked_config	*config;
 
 	/* Switch back to the default config file */
 	if (filename == NULL || *filename == '\0')
@@ -261,11 +267,14 @@ parent_reload(struct iked *env, int reset, const char *filename)
 	if (reset != RESET_RELOAD)
 		return;
 
-	if (parse_config(filename, env) == -1) {
-		log_debug("%s: failed to load config file %s",
-		    __func__, filename);
+	config = parse_config(filename, env);
+	if (config == NULL) {
+		log_debug("%s: failed to load config file %s", __func__,
+		    filename);
 		return;
 	}
+
+	/* MHM Morph previous config into new config */
 
 	/* Re-compile policies and skip steps */
 	config_setcompile(env, PROC_IKEV2);
