@@ -679,7 +679,7 @@ int	 config_setuser(struct iked *, struct iked_user *, enum privsep_procid);
 int	 config_getuser(struct iked *, struct imsg *);
 int	 config_setcompile(struct iked *, enum privsep_procid);
 int	 config_getcompile(struct iked *, struct imsg *);
-int	 config_setocsp(struct iked *);
+int	 config_setocsp(struct iked *, char *);
 int	 config_getocsp(struct iked *, struct imsg *);
 
 /* policy.c */

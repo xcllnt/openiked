@@ -446,9 +446,7 @@ config_setcoupled(struct iked *env, unsigned int couple)
 	unsigned int	 type;
 
 	type = couple ? IMSG_CTL_COUPLE : IMSG_CTL_DECOUPLE;
-	proc_compose(&env->sc_ps, PROC_IKEV2, type, NULL, 0);
-
-	return (0);
+	return (proc_compose(&env->sc_ps, PROC_IKEV2, type, NULL, 0));
 }
 
 int
@@ -464,9 +462,7 @@ config_setmode(struct iked *env, unsigned int passive)
 	unsigned int	 type;
 
 	type = passive ? IMSG_CTL_PASSIVE : IMSG_CTL_ACTIVE;
-	proc_compose(&env->sc_ps, PROC_IKEV2, type, NULL, 0);
-
-	return (0);
+	return (proc_compose(&env->sc_ps, PROC_IKEV2, type, NULL, 0));
 }
 
 int
@@ -490,8 +486,9 @@ config_getmode(struct iked *env, unsigned int type)
 int
 config_setreset(struct iked *env, unsigned int mode, enum privsep_procid id)
 {
-	proc_compose(&env->sc_ps, id, IMSG_CTL_RESET, &mode, sizeof(mode));
-	return (0);
+
+	return (proc_compose(&env->sc_ps, id, IMSG_CTL_RESET, &mode,
+	    sizeof(mode)));
 }
 
 int
@@ -543,14 +540,13 @@ int
 config_setsocket(struct iked *env, struct sockaddr_storage *ss,
     in_port_t port, enum privsep_procid id)
 {
-	int	 ret, s;
+	int	 s;
 
 	s = udp_bind((struct sockaddr *)ss, port);
 	if (s == -1)
 		return (-1);
-	ret = proc_compose_imsg(&env->sc_ps, id, -1, IMSG_UDP_SOCKET, -1,
-	    s, ss, sizeof(*ss));
-	return (ret);
+	return(proc_compose_imsg(&env->sc_ps, id, -1, IMSG_UDP_SOCKET, -1,
+	    s, ss, sizeof(*ss)));
 }
 
 int
@@ -600,14 +596,13 @@ config_getsocket(struct iked *env, struct imsg *imsg,
 int
 config_setpfkey(struct iked *env, enum privsep_procid id)
 {
-	int	 ret, s;
+	int	 s;
 
 	s = pfkey_socket();
 	if (s == -1)
 		return (-1);
-	ret = proc_compose_imsg(&env->sc_ps, id, -1, IMSG_PFKEY_SOCKET, -1,
-	    s, NULL, 0);
-	return (ret);
+	return (proc_compose_imsg(&env->sc_ps, id, -1, IMSG_PFKEY_SOCKET, -1,
+	    s, NULL, 0));
 }
 
 int
@@ -621,13 +616,11 @@ config_getpfkey(struct iked *env, struct imsg *imsg)
 int
 config_setuser(struct iked *env, struct iked_user *usr, enum privsep_procid id)
 {
-	if (env->sc_opts & IKED_OPT_NOACTION) {
-		print_user(usr);
-		return (0);
-	}
 
-	proc_compose(&env->sc_ps, id, IMSG_CFG_USER, usr, sizeof(*usr));
-	return (0);
+	print_user(usr);
+
+	return (proc_compose(&env->sc_ps, id, IMSG_CFG_USER, usr,
+	    sizeof(*usr)));
 }
 
 int
@@ -693,13 +686,7 @@ config_setpolicy(struct iked *env, struct iked_policy *pol,
 
 	print_policy(pol);
 
-	if (env->sc_opts & IKED_OPT_NOACTION)
-		return (0);
-
-	if (proc_composev(&env->sc_ps, id, IMSG_CFG_POLICY, iov, iovcnt) == -1)
-		return (-1);
-
-	return (0);
+	return (proc_composev(&env->sc_ps, id, IMSG_CFG_POLICY, iov, iovcnt));
 }
 
 int
@@ -771,11 +758,8 @@ config_getpolicy(struct iked *env, struct imsg *imsg)
 int
 config_setcompile(struct iked *env, enum privsep_procid id)
 {
-	if (env->sc_opts & IKED_OPT_NOACTION)
-		return (0);
 
-	proc_compose(&env->sc_ps, id, IMSG_COMPILE, NULL, 0);
-	return (0);
+	return (proc_compose(&env->sc_ps, id, IMSG_COMPILE, NULL, 0));
 }
 
 int
@@ -792,16 +776,11 @@ config_getcompile(struct iked *env, struct imsg *imsg)
 }
 
 int
-config_setocsp(struct iked *env)
+config_setocsp(struct iked *env, char *url)
 {
-	
-	if (env->sc_opts & IKED_OPT_NOACTION)
-		return (0);
-	proc_compose(&env->sc_ps, PROC_CERT, IMSG_OCSP_URL,
-	    env->sc_config.cfg_ocsp_url, (env->sc_config.cfg_ocsp_url != NULL)
-	    ? strlen(env->sc_config.cfg_ocsp_url) : 0);
 
-	return (0);
+	return (proc_compose(&env->sc_ps, PROC_CERT, IMSG_OCSP_URL,
+	    url, (url != NULL) ? strlen(url) : 0));
 }
 
 int
