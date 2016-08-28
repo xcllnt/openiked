@@ -1471,13 +1471,13 @@ popfile(void)
 }
 
 struct iked_config *
-parse_config(const char *filename, struct iked *env)
+parse_config(const char *filename, unsigned int opts)
 {
 	struct sym	*sym;
 	int		 errors = 0;
 
 	config_init(&config);
-	if (env->sc_opts & IKED_OPT_PASSIVE)
+	if (opts & IKED_OPT_PASSIVE)
 		config.cfg_passive = 1;
 
 	file = pushfile(filename, 1);
@@ -1495,9 +1495,6 @@ parse_config(const char *filename, struct iked *env)
 		return (NULL);
 	}
 
-	log_info("%s: loaded %u configuration rule(s)", filename,
-	    config.cfg_rules);
-
 	/* Free macros and check which have not been used. */
 	while ((sym = TAILQ_FIRST(&symhead))) {
 		if (!sym->used)
@@ -1507,6 +1504,10 @@ parse_config(const char *filename, struct iked *env)
 		TAILQ_REMOVE(&symhead, sym, entry);
 		free(sym);
 	}
+
+	log_info("%s: %u polic%s; %u user%s", filename, config.cfg_npolicies,
+	    (config.cfg_npolicies == 1) ? "y" : "ies", config.cfg_nusers,
+	    (config.cfg_nusers == 1) ? "" : "s");
 
 	return (&config);
 }
@@ -2706,7 +2707,7 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 	if (check_pubkey(idstr, idtype) != -1)
 		pol.pol_certreqtype = IKEV2_CERT_RSA_KEY;
 
-	config.cfg_rules++;
+	config.cfg_npolicies++;
 	return (0);
 }
 
@@ -2740,5 +2741,6 @@ create_user(const char *user, const char *pass)
 		free(usr);
 		return (-1);
 	}
+	config.cfg_nusers++;
 	return (0);
 }

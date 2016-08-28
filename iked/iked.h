@@ -574,11 +574,12 @@ struct iked_user {
 RB_HEAD(iked_users, iked_user);
 
 struct iked_config {
-	struct iked_users		 cfg_users;
 	struct iked_policies		 cfg_policies;
+	struct iked_users		 cfg_users;
 	struct iked_policy		*cfg_defpolicy;
 	char				*cfg_ocsp_url;
-	unsigned int			 cfg_rules;
+	unsigned int			 cfg_npolicies;
+	unsigned int			 cfg_nusers;
 	uint8_t				 cfg_passive;
 	uint8_t				 cfg_decoupled;
 };
@@ -991,7 +992,7 @@ int	 ocsp_validate_cert(struct iked *, struct iked_static_id *,
     void *, size_t, struct iked_sahdr, uint8_t);
 
 /* parse.y */
-struct iked_config *parse_config(const char *, struct iked *);
+struct iked_config *parse_config(const char *, unsigned int);
 void	 print_user(struct iked_user *);
 void	 print_policy(struct iked_policy *);
 size_t	 keylength_xf(unsigned int, unsigned int, unsigned int);

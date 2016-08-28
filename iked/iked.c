@@ -41,7 +41,7 @@ void	 parent_shutdown(struct iked *);
 void	 parent_sig_handler(int, short, void *);
 int	 parent_dispatch_ca(int, struct privsep_proc *, struct imsg *);
 int	 parent_dispatch_control(int, struct privsep_proc *, struct imsg *);
-int	 parent_configure(struct iked *);
+int	 parent_configure(struct iked *, struct iked_config *);
 
 static struct privsep_proc procs[] = {
 	{ "ca",		PROC_CERT,	parent_dispatch_ca, caproc, IKED_CA },
@@ -62,12 +62,17 @@ usage(void)
 int
 main(int argc, char *argv[])
 {
-	int		 c;
-	int		 debug = 0, verbose = 0;
-	int		 opts = 0;
-	const char	*conffile = IKED_CONFIG;
-	struct iked	*env = NULL;
-	struct privsep	*ps;
+	struct iked_config	*config;
+	struct iked		*env;
+	const char		*conffile;
+	struct privsep		*ps;
+	unsigned int		 opts;
+	int			 c, debug, verbose;
+
+	conffile = IKED_CONFIG;
+	debug = 0;
+	opts = 0;
+	verbose = 0;
 
 	log_init(1, LOG_DAEMON);
 
@@ -109,7 +114,17 @@ main(int argc, char *argv[])
 		}
 	}
 
-	if ((env = calloc(1, sizeof(*env))) == NULL)
+	if (opts & IKED_OPT_NOACTION) {
+		config = parse_config(conffile, opts);
+		if (config != NULL) {
+			fprintf(stderr, "configuration OK\n");
+			exit(0);
+		}
+		exit(1);
+	}
+
+	env = calloc(1, sizeof(*env));
+	if (env == NULL)
 		fatal("calloc: env");
 
 	env->sc_opts = opts;
@@ -171,7 +186,12 @@ main(int argc, char *argv[])
 
 	proc_listen(ps, procs, nitems(procs));
 
-	if (parent_configure(env) == -1)
+	config = parse_config(env->sc_conffile, env->sc_opts);
+	if (config == NULL) {
+		proc_kill(&env->sc_ps);
+		exit(1);
+	}
+	if (parent_configure(env, config) == -1)
 		fatalx("configuration failed");
 
 	event_dispatch();
@@ -182,22 +202,9 @@ main(int argc, char *argv[])
 }
 
 int
-parent_configure(struct iked *env)
+parent_configure(struct iked *env, struct iked_config *config)
 {
 	struct sockaddr_storage	  ss;
-	struct iked_config	 *config;
-
-	config = parse_config(env->sc_conffile, env);
-	if (config == NULL) {
-		proc_kill(&env->sc_ps);
-		exit(1);
-	}
-
-	if (env->sc_opts & IKED_OPT_NOACTION) {
-		fprintf(stderr, "configuration OK\n");
-		proc_kill(&env->sc_ps);
-		exit(0);
-	}
 
 	env->sc_pfkey = -1;
 	config_setpfkey(env, PROC_IKEV2);
@@ -258,7 +265,7 @@ parent_reload(struct iked *env, int reset, const char *filename)
 	if (reset != RESET_RELOAD)
 		return;
 
-	config = parse_config(filename, env);
+	config = parse_config(filename, env->sc_opts);
 	if (config == NULL) {
 		log_debug("%s: failed to load config file %s", __func__,
 		    filename);
