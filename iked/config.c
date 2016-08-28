@@ -819,3 +819,10 @@ config_getocsp(struct iked *env, struct imsg *imsg)
 	    ? env->sc_config.cfg_ocsp_url : "none");
 	return (0);
 }
+
+int
+config_apply(struct iked *env, struct iked_config *config)
+{
+
+	return (-1);
+}

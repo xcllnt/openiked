@@ -238,16 +238,7 @@ parent_configure(struct iked *env)
 	if (pledge("stdio rpath proc dns inet route sendfd", NULL) == -1)
 		fatal("pledge");
 
-	/* MHM Morph previous config into new config */
-
-	/* Now compile the policies and calculate skip steps */
-	config_setcompile(env, PROC_IKEV2);
-
-	config_setcoupled(env, env->sc_config.cfg_decoupled ? 0 : 1);
-	config_setmode(env, env->sc_config.cfg_passive ? 1 : 0);
-	config_setocsp(env);
-
-	return (0);
+	return (config_apply(env, config));
 }
 
 void
@@ -274,14 +265,7 @@ parent_reload(struct iked *env, int reset, const char *filename)
 		return;
 	}
 
-	/* MHM Morph previous config into new config */
-
-	/* Re-compile policies and skip steps */
-	config_setcompile(env, PROC_IKEV2);
-
-	config_setcoupled(env, env->sc_config.cfg_decoupled ? 0 : 1);
-	config_setmode(env, env->sc_config.cfg_passive ? 1 : 0);
-	config_setocsp(env);
+	config_apply(env, config);
 }
 
 void
