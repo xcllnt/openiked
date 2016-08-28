@@ -508,8 +508,7 @@ config_getreset(struct iked *env, struct imsg *imsg)
 	IMSG_SIZE_CHECK(imsg, &mode);
 	memcpy(&mode, imsg->data, sizeof(mode));
 
-	if (mode == RESET_ALL || mode == RESET_POLICY ||
-	    mode == RESET_RELOAD) {
+	if (mode == RESET_ALL || mode == RESET_POLICY) {
 		log_debug("%s: flushing policies", __func__);
 		for (pol = TAILQ_FIRST(&env->sc_config.cfg_policies);
 		    pol != NULL; pol = nextpol) {
@@ -787,6 +786,7 @@ int
 config_setapply(struct iked *env, enum apply_action action)
 {
 
+	log_debug("%s: action=%u", __func__, action);
 	return (proc_compose(&env->sc_ps, PROC_IKEV2, IMSG_CFG_APPLY,
 	    &action, sizeof(action)));
 }
@@ -797,6 +797,7 @@ config_getapply(struct iked *env, struct imsg *imsg)
 	enum apply_action	 action;
 
 	action = *(enum apply_action *)(imsg->data);
+	log_debug("%s: action=%u", __func__, action);
 	switch (action) {
 	case APPLY_BEGIN:
 		config_init(&env->sc_newconfig);
@@ -847,10 +848,6 @@ config_apply(struct iked *env, struct iked_config *config)
 			break;
 
 		err = config_setapply(env, APPLY_COMPLETE);
-		if (err)
-			break;
-
-		config_replace(&env->sc_config, config);
 	} while (0);
 
 	if (err) {
@@ -860,7 +857,14 @@ config_apply(struct iked *env, struct iked_config *config)
 	}
 
 	err = config_setcoupled(env, config->cfg_decoupled ? 0 : 1);
-	if (!err)
+	if (!err) {
+		env->sc_config.cfg_decoupled = config->cfg_decoupled;
 		err = config_setmode(env, config->cfg_passive ? 1 : 0);
+		if (!err)
+			env->sc_config.cfg_passive = config->cfg_passive;
+	}
+
+	config_cleanup(config);
+
 	return (err);
 }
