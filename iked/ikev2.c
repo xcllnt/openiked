@@ -186,8 +186,8 @@ ikev2_dispatch_parent(int fd, struct privsep_proc *p, struct imsg *imsg)
 		return (config_getpolicy(env, imsg));
 	case IMSG_CFG_USER:
 		return (config_getuser(env, imsg));
-	case IMSG_COMPILE:
-		return (config_getcompile(env, imsg));
+	case IMSG_CFG_APPLY:
+		return (config_getapply(env, imsg));
 	default:
 		break;
 	}

@@ -587,6 +587,7 @@ struct iked_config {
 struct iked {
 	char				 sc_conffile[PATH_MAX];
 	struct iked_config		 sc_config;
+	struct iked_config		 sc_newconfig;
 
 	uint32_t			 sc_opts;
 
@@ -666,19 +667,18 @@ int	 config_setmode(struct iked *, unsigned int);
 int	 config_getmode(struct iked *, unsigned int);
 int	 config_setreset(struct iked *, unsigned int, enum privsep_procid);
 int	 config_getreset(struct iked *, struct imsg *);
-int	 config_setpolicy(struct iked *, struct iked_policy *,
-	    enum privsep_procid);
-int	 config_getpolicy(struct iked *, struct imsg *);
 int	 config_setsocket(struct iked *, struct sockaddr_storage *, in_port_t,
 	    enum privsep_procid);
 int	 config_getsocket(struct iked *env, struct imsg *,
 	    void (*cb)(int, short, void *));
 int	 config_setpfkey(struct iked *, enum privsep_procid);
 int	 config_getpfkey(struct iked *, struct imsg *);
-int	 config_setuser(struct iked *, struct iked_user *, enum privsep_procid);
+int	 config_setapply(struct iked *, enum apply_action);
+int	 config_getapply(struct iked *, struct imsg *);
+int	 config_setpolicy(struct iked *, struct iked_policy *);
+int	 config_getpolicy(struct iked *, struct imsg *);
+int	 config_setuser(struct iked *, struct iked_user *);
 int	 config_getuser(struct iked *, struct imsg *);
-int	 config_setcompile(struct iked *, enum privsep_procid);
-int	 config_getcompile(struct iked *, struct imsg *);
 int	 config_setocsp(struct iked *, char *);
 int	 config_getocsp(struct iked *, struct imsg *);
 

@@ -55,9 +55,40 @@ config_cleanup(struct iked_config *config)
 		config_free_proposals(&pol->pol_proposals, 0);
 		free(pol);
 	}
+	config->cfg_defpolicy = NULL;
+
 	while ((usr = RB_MIN(iked_users, &config->cfg_users)) != NULL) {
 		RB_REMOVE(iked_users, &config->cfg_users, usr);
 		free(usr);
+	}
+
+	if (config->cfg_ocsp_url != NULL) {
+		free(config->cfg_ocsp_url);
+		config->cfg_ocsp_url = NULL;
+	}
+}
+
+void
+config_replace(struct iked_config *cur, struct iked_config *new)
+{
+	struct iked_policy	*pol;
+	struct iked_user	*usr;
+
+	config_cleanup(cur);
+
+	memcpy(cur, new, sizeof(*cur));
+	RB_INIT(&cur->cfg_users);
+	TAILQ_INIT(&cur->cfg_policies);
+	new->cfg_ocsp_url = NULL;
+	new->cfg_defpolicy = NULL;
+
+	while ((pol = TAILQ_FIRST(&new->cfg_policies)) != NULL) {
+		TAILQ_REMOVE(&new->cfg_policies, pol, pol_entry);
+		TAILQ_INSERT_TAIL(&cur->cfg_policies, pol, pol_entry);
+	}
+	while ((usr = RB_MIN(iked_users, &new->cfg_users)) != NULL) {
+		RB_REMOVE(iked_users, &new->cfg_users, usr);
+		RB_INSERT(iked_users, &cur->cfg_users, usr);
 	}
 }
 
@@ -411,31 +442,6 @@ config_findtransform(struct iked_proposals *props, uint8_t type,
 	return (NULL);
 }
 
-struct iked_user *
-config_new_user(struct iked *env, struct iked_user *new)
-{
-	struct iked_user	*usr, *old;
-
-	if ((usr = calloc(1, sizeof(*usr))) == NULL)
-		return (NULL);
-
-	memcpy(usr, new, sizeof(*usr));
-
-	old = RB_INSERT(iked_users, &env->sc_config.cfg_users, usr);
-	if (old != NULL) {
-		/* Update the password of an existing user*/
-		memcpy(old, new, sizeof(*old));
-
-		log_debug("%s: updating user %s", __func__, usr->usr_name);
-		free(usr);
-
-		return (old);
-	}
-
-	log_debug("%s: inserting new user %s", __func__, usr->usr_name);
-	return (usr);
-}
-
 /*
  * Inter-process communication of configuration items.
  */
@@ -614,34 +620,35 @@ config_getpfkey(struct iked *env, struct imsg *imsg)
 }
 
 int
-config_setuser(struct iked *env, struct iked_user *usr, enum privsep_procid id)
+config_setuser(struct iked *env, struct iked_user *usr)
 {
 
 	print_user(usr);
 
-	return (proc_compose(&env->sc_ps, id, IMSG_CFG_USER, usr,
+	return (proc_compose(&env->sc_ps, PROC_IKEV2, IMSG_CFG_USER, usr,
 	    sizeof(*usr)));
 }
 
 int
 config_getuser(struct iked *env, struct imsg *imsg)
 {
-	struct iked_user	 usr;
+	struct iked_user	*usr;
 
-	IMSG_SIZE_CHECK(imsg, &usr);
-	memcpy(&usr, imsg->data, sizeof(usr));
+	IMSG_SIZE_CHECK(imsg, usr);
 
-	if (config_new_user(env, &usr) == NULL)
+	usr = malloc(sizeof(*usr));
+	if (usr == NULL)
 		return (-1);
 
-	print_user(&usr);
+	memcpy(usr, imsg->data, sizeof(*usr));
 
+	RB_INSERT(iked_users, &env->sc_newconfig.cfg_users, usr);
+	env->sc_newconfig.cfg_nusers++;
 	return (0);
 }
 
 int
-config_setpolicy(struct iked *env, struct iked_policy *pol,
-    enum privsep_procid id)
+config_setpolicy(struct iked *env, struct iked_policy *pol)
 {
 	struct iked_proposal	*prop;
 	struct iked_flow	*flow;
@@ -686,7 +693,8 @@ config_setpolicy(struct iked *env, struct iked_policy *pol,
 
 	print_policy(pol);
 
-	return (proc_composev(&env->sc_ps, id, IMSG_CFG_POLICY, iov, iovcnt));
+	return (proc_composev(&env->sc_ps, PROC_IKEV2, IMSG_CFG_POLICY,
+	    iov, iovcnt));
 }
 
 int
@@ -743,35 +751,11 @@ config_getpolicy(struct iked *env, struct imsg *imsg)
 			free(flow);
 	}
 
-	TAILQ_INSERT_TAIL(&env->sc_config.cfg_policies, pol, pol_entry);
+	TAILQ_INSERT_TAIL(&env->sc_newconfig.cfg_policies, pol, pol_entry);
+	env->sc_newconfig.cfg_npolicies++;
 
-	if (pol->pol_flags & IKED_POLICY_DEFAULT) {
-		/* Only one default policy, just free/unref the old one */
-		if (env->sc_config.cfg_defpolicy != NULL)
-			config_free_policy(env, env->sc_config.cfg_defpolicy);
-		env->sc_config.cfg_defpolicy = pol;
-	}
-
-	return (0);
-}
-
-int
-config_setcompile(struct iked *env, enum privsep_procid id)
-{
-
-	return (proc_compose(&env->sc_ps, id, IMSG_COMPILE, NULL, 0));
-}
-
-int
-config_getcompile(struct iked *env, struct imsg *imsg)
-{
-	/*
-	 * Do any necessary steps after configuration, for now we
-	 * only need to compile the skip steps.
-	 */
-	policy_calc_skip_steps(&env->sc_config.cfg_policies);
-
-	log_debug("%s: compilation done", __func__);
+	if (pol->pol_flags & IKED_POLICY_DEFAULT)
+		env->sc_newconfig.cfg_defpolicy = pol;
 	return (0);
 }
 
@@ -800,8 +784,83 @@ config_getocsp(struct iked *env, struct imsg *imsg)
 }
 
 int
-config_apply(struct iked *env, struct iked_config *config)
+config_setapply(struct iked *env, enum apply_action action)
 {
 
-	return (-1);
+	return (proc_compose(&env->sc_ps, PROC_IKEV2, IMSG_CFG_APPLY,
+	    &action, sizeof(action)));
+}
+
+int
+config_getapply(struct iked *env, struct imsg *imsg)
+{
+	enum apply_action	 action;
+
+	action = *(enum apply_action *)(imsg->data);
+	switch (action) {
+	case APPLY_BEGIN:
+		config_init(&env->sc_newconfig);
+		break;
+	case APPLY_ABORT:
+		config_cleanup(&env->sc_newconfig);
+		break;
+	case APPLY_COMPLETE:
+		policy_calc_skip_steps(&env->sc_newconfig.cfg_policies);
+		config_replace(&env->sc_config, &env->sc_newconfig);
+		break;
+	}
+	return (0);
+}
+
+int
+config_apply(struct iked *env, struct iked_config *config)
+{
+	struct iked_policy	*pol;
+	struct iked_user	*usr;
+	int			 err;
+
+	err = config_setapply(env, APPLY_BEGIN);
+	if (err)
+		return (err);
+
+	do {
+		err = config_setocsp(env, config->cfg_ocsp_url);
+		if (err)
+			break;
+
+		TAILQ_FOREACH(pol, &config->cfg_policies, pol_entry) {
+			err = config_setpolicy(env, pol);
+			if (err)
+				break;
+		}
+		if (err)
+			break;
+
+		usr = RB_MIN(iked_users, &config->cfg_users);
+		while (usr != NULL) {
+			err = config_setuser(env, usr);
+			if (err)
+				break;
+			usr = RB_NEXT(iked_users, &config->cfg_users, usr);
+		}
+		if (err)
+			break;
+
+		err = config_setapply(env, APPLY_COMPLETE);
+		if (err)
+			break;
+
+		config_replace(&env->sc_config, config);
+	} while (0);
+
+	if (err) {
+		config_setapply(env, APPLY_ABORT);
+		config_cleanup(config);
+		return (err);
+	}
+
+	err = config_setcoupled(env, config->cfg_decoupled ? 0 : 1);
+	if (!err)
+		err = config_setmode(env, config->cfg_passive ? 1 : 0);
+	return (err);
 }
