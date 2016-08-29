@@ -69,10 +69,45 @@ config_cleanup(struct iked_config *config)
 }
 
 void
-config_replace(struct iked_config *cur, struct iked_config *new)
+config_replace(struct iked *env, struct iked_config *new)
 {
+	struct iked_config	*cur = &env->sc_config;
+	struct iked_flow	*flow;
+	struct iked_sa		*sa;
 	struct iked_policy	*pol;
 	struct iked_user	*usr;
+
+	/*
+	 * Walk current policies and find active flows and SAs
+	 */
+	TAILQ_FOREACH(pol, &cur->cfg_policies, pol_entry) {
+		TAILQ_FOREACH(sa, &pol->pol_sapeers, sa_peer_entry) {
+			log_info("Policy %s, SA %p: active", pol->pol_name,
+			    sa);
+			/*
+			 * Decouple the SA from the policy. The SA will
+			 * get associated with a matching policy when
+			 * a new message arrives.
+			 */
+			TAILQ_REMOVE(&pol->pol_sapeers, sa, sa_peer_entry);
+			sa->sa_policy = NULL;
+		}
+		RB_FOREACH(flow, iked_flows, &pol->pol_flows) {
+			if (!flow->flow_loaded)
+				continue;
+			log_info("Policy %s, flow %p: loaded", pol->pol_name,
+			    flow);
+			/*
+			 * Unload the flow from the kernel. A replacement
+			 * will get added shortly after.
+			 * XXX this can result in a policy violation for
+			 * packets sent during the time the flow was not
+			 * present.
+			 */
+			(void)pfkey_flow_delete(env->sc_pfkey, flow);
+			flow->flow_loaded = 0;
+		}
+	}
 
 	config_cleanup(cur);
 
@@ -807,7 +842,7 @@ config_getapply(struct iked *env, struct imsg *imsg)
 		break;
 	case APPLY_COMPLETE:
 		policy_calc_skip_steps(&env->sc_newconfig.cfg_policies);
-		config_replace(&env->sc_config, &env->sc_newconfig);
+		config_replace(env, &env->sc_newconfig);
 		break;
 	}
 	return (0);
