@@ -72,40 +72,39 @@ void
 config_replace(struct iked *env, struct iked_config *new)
 {
 	struct iked_config	*cur = &env->sc_config;
-	struct iked_flow	*flow;
-	struct iked_sa		*sa;
-	struct iked_policy	*pol;
+	struct iked_flow	*flow, *flowkey;
+	struct iked_sa		*sa, *satmp;
+	struct iked_policy	*pol, *polkey;
 	struct iked_user	*usr;
 
 	/*
-	 * Walk current policies and find active flows and SAs
+	 * Walk current policies and transfer state to new policies
 	 */
-	TAILQ_FOREACH(pol, &cur->cfg_policies, pol_entry) {
-		TAILQ_FOREACH(sa, &pol->pol_sapeers, sa_peer_entry) {
-			log_info("Policy %s, SA %p: active", pol->pol_name,
-			    sa);
-			/*
-			 * Decouple the SA from the policy. The SA will
-			 * get associated with a matching policy when
-			 * a new message arrives.
-			 */
-			TAILQ_REMOVE(&pol->pol_sapeers, sa, sa_peer_entry);
-			sa->sa_policy = NULL;
+	TAILQ_FOREACH(polkey, &cur->cfg_policies, pol_entry) {
+		pol = policy_test(&new->cfg_policies, polkey);
+		TAILQ_FOREACH_SAFE(sa, &polkey->pol_sapeers, sa_peer_entry,
+		    satmp) {
+			if (pol != NULL) {
+				TAILQ_REMOVE(&polkey->pol_sapeers, sa,
+				    sa_peer_entry);
+				sa->sa_policy = pol;
+				TAILQ_INSERT_TAIL(&pol->pol_sapeers, sa,
+				    sa_peer_entry);
+			} else
+				sa_free(env, sa);
 		}
-		RB_FOREACH(flow, iked_flows, &pol->pol_flows) {
-			if (!flow->flow_loaded)
+		RB_FOREACH(flowkey, iked_flows, &polkey->pol_flows) {
+			if (!flowkey->flow_loaded)
 				continue;
-			log_info("Policy %s, flow %p: loaded", pol->pol_name,
-			    flow);
-			/*
-			 * Unload the flow from the kernel. A replacement
-			 * will get added shortly after.
-			 * XXX this can result in a policy violation for
-			 * packets sent during the time the flow was not
-			 * present.
-			 */
-			(void)pfkey_flow_delete(env->sc_pfkey, flow);
-			flow->flow_loaded = 0;
+			flow = (pol != NULL) ? policy_find_flow(pol, flowkey)
+			    : NULL;
+			log_info("XXX: flowkey=%p, loaded=%d, flow=%p",
+			    flowkey, flowkey->flow_loaded, flow);
+			if (flow != NULL) {
+				flow->flow_loaded = 1;
+				flowkey->flow_loaded = 0;
+			} else
+				pfkey_flow_delete(env->sc_pfkey, flowkey);
 		}
 	}
 

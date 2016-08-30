@@ -686,7 +686,9 @@ int	 config_getocsp(struct iked *, struct imsg *);
 void	 policy_init(struct iked *);
 int	 policy_lookup(struct iked *, struct iked_message *);
 struct iked_policy *
-	 policy_test(struct iked *, struct iked_policy *);
+	 policy_test(struct iked_policies *, struct iked_policy *);
+struct iked_flow *
+	 policy_find_flow(struct iked_policy *, struct iked_flow *);
 void	 policy_calc_skip_steps(struct iked_policies *);
 void	 policy_ref(struct iked *, struct iked_policy *);
 void	 policy_unref(struct iked *, struct iked_policy *);

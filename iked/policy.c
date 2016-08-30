@@ -79,7 +79,8 @@ policy_lookup(struct iked *env, struct iked_message *msg)
 	}
 
 	/* Try to find a matching policy for this message */
-	if ((msg->msg_policy = policy_test(env, &pol)) != NULL)
+	msg->msg_policy = policy_test(&env->sc_config.cfg_policies, &pol);
+	if (msg->msg_policy != NULL)
 		goto found;
 
 	/* No matching policy found, try the default */
@@ -93,7 +94,7 @@ policy_lookup(struct iked *env, struct iked_message *msg)
 	return (0);
 }
 
-static struct iked_flow *
+struct iked_flow *
 policy_find_flow(struct iked_policy *pol, struct iked_flow *key)
 {
 	struct iked_flow *flow;
@@ -103,33 +104,25 @@ policy_find_flow(struct iked_policy *pol, struct iked_flow *key)
 	 * the configuration policies or rules specified in iked.conf
 	 */
 	RB_FOREACH(flow, iked_flows, &pol->pol_flows) {
-		if (flow->flow_transport) {
-			if (sockaddr_cmp((void *)&key->flow_src.addr,
-					 (void *)&flow->flow_src.addr,
-					 flow->flow_src.addr_mask) == 0 &&
-			    sockaddr_cmp((void *)&key->flow_dst.addr,
-					 (void *)&flow->flow_dst.addr,
-					 flow->flow_dst.addr_mask) == 0)
-				return (flow);
-			continue;
-		}
 		if (sockaddr_cmp((void *)&key->flow_src.addr,
-				 (void *)&flow->flow_local->addr, -1) == 0 &&
+				 (void *)&flow->flow_src.addr,
+				 flow->flow_src.addr_mask) == 0 &&
 		    sockaddr_cmp((void *)&key->flow_dst.addr,
-				 (void *)&flow->flow_peer->addr, -1) == 0)
+				 (void *)&flow->flow_dst.addr,
+				 flow->flow_dst.addr_mask) == 0)
 			return (flow);
 	}
 	return (NULL);
 }
 
 struct iked_policy *
-policy_test(struct iked *env, struct iked_policy *key)
+policy_test(struct iked_policies *policies, struct iked_policy *key)
 {
 	struct iked_policy	*p = NULL, *pol = NULL;
 	struct iked_flow	*flow = NULL, *flowkey;
 	unsigned int		 cnt = 0;
 
-	p = TAILQ_FIRST(&env->sc_config.cfg_policies);
+	p = TAILQ_FIRST(policies);
 	while (p != NULL) {
 		cnt++;
 		if (p->pol_flags & IKED_POLICY_SKIP)

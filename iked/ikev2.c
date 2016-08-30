@@ -4952,7 +4952,8 @@ ikev2_acquire_sa(struct iked *env, struct iked_flow *acquire)
 		RB_INSERT(iked_flows, &pol.pol_flows, acquire);
 		pol.pol_nflows = 1;
 
-		if ((p = policy_test(env, &pol)) == NULL) {
+		p = policy_test(&env->sc_config.cfg_policies, &pol);
+		if (p == NULL) {
 			log_warnx("%s: flow wasn't found", __func__);
 			return (0);
 		}
