@@ -99,14 +99,12 @@ policy_find_flow(struct iked_policy *pol, struct iked_flow *key, int acquire)
 	struct iked_flow *flow;
 	int cmp;
 
-	/*
-	 * We're looking for a precise match if this is not for an
-	 * acquire message from the kernel.
-	 */
-	if (!acquire) {
-		flow = RB_FIND(iked_flows, &pol->pol_flows, key);
+	flow = RB_FIND(iked_flows, &pol->pol_flows, key);
+	if (flow != NULL)
 		return (flow);
-	}
+
+	if (!acquire)
+		return (NULL);
 
 	/*
 	 * Acquire messages from the kernel are treated specially in
