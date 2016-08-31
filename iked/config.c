@@ -81,7 +81,7 @@ config_replace(struct iked *env, struct iked_config *new)
 	 * Walk current policies and transfer state to new policies
 	 */
 	TAILQ_FOREACH(polkey, &cur->cfg_policies, pol_entry) {
-		pol = policy_test(&new->cfg_policies, polkey);
+		pol = policy_test(&new->cfg_policies, polkey, 0);
 		TAILQ_FOREACH_SAFE(sa, &polkey->pol_sapeers, sa_peer_entry,
 		    satmp) {
 			if (pol != NULL) {
@@ -96,10 +96,8 @@ config_replace(struct iked *env, struct iked_config *new)
 		RB_FOREACH(flowkey, iked_flows, &polkey->pol_flows) {
 			if (!flowkey->flow_loaded)
 				continue;
-			flow = (pol != NULL) ? policy_find_flow(pol, flowkey)
-			    : NULL;
-			log_info("XXX: flowkey=%p, loaded=%d, flow=%p",
-			    flowkey, flowkey->flow_loaded, flow);
+			flow = (pol == NULL) ? NULL :
+			    policy_find_flow(pol, flowkey, 0);
 			if (flow != NULL) {
 				flow->flow_loaded = 1;
 				flowkey->flow_loaded = 0;

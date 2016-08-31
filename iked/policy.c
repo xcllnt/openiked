@@ -57,7 +57,6 @@ policy_lookup(struct iked *env, struct iked_message *msg)
 	struct iked_policy	 pol;
 	char			*s, idstr[IKED_ID_SIZE];
 
-
 	if (msg->msg_sa != NULL && msg->msg_sa->sa_policy != NULL) {
 		/* Existing SA with policy */
 		msg->msg_policy = msg->msg_sa->sa_policy;
@@ -79,7 +78,7 @@ policy_lookup(struct iked *env, struct iked_message *msg)
 	}
 
 	/* Try to find a matching policy for this message */
-	msg->msg_policy = policy_test(&env->sc_config.cfg_policies, &pol);
+	msg->msg_policy = policy_test(&env->sc_config.cfg_policies, &pol, 0);
 	if (msg->msg_policy != NULL)
 		goto found;
 
@@ -95,28 +94,47 @@ policy_lookup(struct iked *env, struct iked_message *msg)
 }
 
 struct iked_flow *
-policy_find_flow(struct iked_policy *pol, struct iked_flow *key)
+policy_find_flow(struct iked_policy *pol, struct iked_flow *key, int acquire)
 {
 	struct iked_flow *flow;
+	int cmp;
 
 	/*
-	 * Check if incoming flow from kernel upcall matches any of
-	 * the configuration policies or rules specified in iked.conf
+	 * We're looking for a precise match if this is not for an
+	 * acquire message from the kernel.
 	 */
-	RB_FOREACH(flow, iked_flows, &pol->pol_flows) {
-		if (sockaddr_cmp((void *)&key->flow_src.addr,
-				 (void *)&flow->flow_src.addr,
-				 flow->flow_src.addr_mask) == 0 &&
-		    sockaddr_cmp((void *)&key->flow_dst.addr,
-				 (void *)&flow->flow_dst.addr,
-				 flow->flow_dst.addr_mask) == 0)
+	if (!acquire) {
+		flow = RB_FIND(iked_flows, &pol->pol_flows, key);
+		return (flow);
+	}
+
+	/*
+	 * Acquire messages from the kernel are treated specially in
+	 * that the src and dest addresses are treated as CIDRs.  The
+	 * flow matches when the host address fall within the subnets
+	 * as given by the CIDRs.
+	 */
+	flow = RB_ROOT(&pol->pol_flows);
+	while (flow != NULL) {
+		cmp = sockaddr_cmp((void *)&key->flow_dst.addr,
+		    (void *)&flow->flow_dst.addr, flow->flow_dst.addr_mask);
+		if (!cmp)
+			cmp = sockaddr_cmp((void *)&key->flow_src.addr,
+			    (void *)&flow->flow_src.addr,
+			    flow->flow_src.addr_mask);
+		if (!cmp && key->flow_dir && flow->flow_dir)
+			cmp = (int)key->flow_dir - (int)flow->flow_dir;
+		if (!cmp)
 			return (flow);
+		flow = (cmp < 0) ? RB_LEFT(flow, flow_node) :
+		    RB_RIGHT(flow, flow_node);
 	}
 	return (NULL);
 }
 
 struct iked_policy *
-policy_test(struct iked_policies *policies, struct iked_policy *key)
+policy_test(struct iked_policies *policies, struct iked_policy *key,
+    int acquire)
 {
 	struct iked_policy	*p = NULL, *pol = NULL;
 	struct iked_flow	*flow = NULL, *flowkey;
@@ -150,7 +168,8 @@ policy_test(struct iked_policies *policies, struct iked_policy *key)
 			if (key->pol_nflows) {
 				flowkey = RB_MIN(iked_flows, &key->pol_flows);
 				if (flowkey != NULL) {
-					flow = policy_find_flow(p, flowkey);
+					flow = policy_find_flow(p, flowkey,
+					    acquire);
 					if (flow == NULL) {
 						p = TAILQ_NEXT(p, pol_entry);
 						continue;
