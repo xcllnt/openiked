@@ -522,7 +522,7 @@ struct privsep {
 	const char			*ps_title[PROC_MAX];
 	pid_t				 ps_pid[PROC_MAX];
 	struct passwd			*ps_pw;
-	int				 ps_noaction;
+	int				 ps_restart;
 
 	struct control_sock		 ps_csock;
 	struct control_socks		 ps_rcsocks;
@@ -879,10 +879,12 @@ void	 timer_add(struct iked *, struct iked_timer *, int);
 void	 timer_del(struct iked *, struct iked_timer *);
 
 /* proc.c */
+void	 proc_close(struct privsep *);
 void	 proc_init(struct privsep *, struct privsep_proc *, unsigned int);
 void	 proc_kill(struct privsep *);
 void	 proc_listen(struct privsep *, struct privsep_proc *, size_t);
 void	 proc_dispatch(int, short event, void *);
+int	 proc_reap(struct privsep *, pid_t, int);
 pid_t	 proc_run(struct privsep *, struct privsep_proc *,
 	    struct privsep_proc *, unsigned int,
 	    void (*)(struct privsep *, struct privsep_proc *, void *), void *);

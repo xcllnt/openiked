@@ -37,7 +37,6 @@
 
 __dead void usage(void);
 
-void	 parent_shutdown(struct iked *);
 void	 parent_sig_handler(int, short, void *);
 int	 parent_dispatch_ca(int, struct privsep_proc *, struct imsg *);
 int	 parent_dispatch_control(int, struct privsep_proc *, struct imsg *);
@@ -60,7 +59,7 @@ usage(void)
 }
 
 int
-main(int argc, char *argv[])
+main(int argc, char *argv[], char *envp[])
 {
 	struct iked_config	*config;
 	struct iked		*env;
@@ -188,6 +187,7 @@ main(int argc, char *argv[])
 
 	config = parse_config(env->sc_conffile, env->sc_opts);
 	if (config == NULL) {
+		proc_close(&env->sc_ps);
 		proc_kill(&env->sc_ps);
 		exit(1);
 	}
@@ -196,7 +196,20 @@ main(int argc, char *argv[])
 
 	event_dispatch();
 
-	log_debug("%d parent exiting", getpid());
+	proc_close(&env->sc_ps);
+	proc_kill(&env->sc_ps);
+
+	if (env->sc_ps.ps_restart) {
+		log_warnx("%s[%d] restarting",
+		    env->sc_ps.ps_title[PROC_PARENT],
+		    env->sc_ps.ps_pid[PROC_PARENT]);
+		execve(argv[0], argv, envp);
+		log_warnx("unable to restart -- terminating");
+		exit(1);
+	}
+
+	log_info("%s[%d] terminating", env->sc_ps.ps_title[PROC_PARENT],
+	    env->sc_ps.ps_pid[PROC_PARENT]);
 
 	return (0);
 }
@@ -279,9 +292,8 @@ void
 parent_sig_handler(int sig, short event, void *arg)
 {
 	struct privsep	*ps = arg;
-	int		 die = 0, status, fail, id;
+	int		 die, status;
 	pid_t		 pid;
-	char		*cause;
 
 	switch (sig) {
 	case SIGHUP:
@@ -301,49 +313,20 @@ parent_sig_handler(int sig, short event, void *arg)
 		break;
 	case SIGTERM:
 	case SIGINT:
-		die = 1;
-		/* FALLTHROUGH */
+		log_info("%s[%d] received %s", ps->ps_title[PROC_PARENT],
+		    ps->ps_pid[PROC_PARENT],
+		    (sig == SIGTERM) ? "SIGTERM": "SIGINT");
+		event_loopexit(NULL);
+		break;
 	case SIGCHLD:
+		die = 0;
 		do {
-			int len;
-
 			pid = waitpid(-1, &status, WNOHANG);
-			if (pid <= 0)
-				continue;
-
-			fail = 0;
-			if (WIFSIGNALED(status)) {
-				fail = 1;
-				len = asprintf(&cause, "terminated; signal %d",
-				    WTERMSIG(status));
-			} else if (WIFEXITED(status)) {
-				if (WEXITSTATUS(status) != 0) {
-					fail = 1;
-					len = asprintf(&cause,
-					    "exited abnormally");
-				} else
-					len = asprintf(&cause, "exited okay");
-			} else
-				fatalx("unexpected cause of SIGCHLD");
-
-			if (len == -1)
-				fatal("asprintf");
-
-			die = 1;
-
-			for (id = 0; id < PROC_MAX; id++)
-				if (pid == ps->ps_pid[id]) {
-					if (fail)
-						log_warnx("lost child: %s %s",
-						    ps->ps_title[id], cause);
-					break;
-				}
-
-			free(cause);
+			if (pid > 0)
+				die |= proc_reap(ps, pid, status);
 		} while (pid > 0 || (pid == -1 && errno == EINTR));
-
 		if (die)
-			parent_shutdown(ps->ps_env);
+			event_loopexit(NULL);
 		break;
 	default:
 		fatalx("unexpected signal");
@@ -397,15 +380,4 @@ parent_dispatch_control(int fd, struct privsep_proc *p, struct imsg *imsg)
 	}
 
 	return (0);
-}
-
-void
-parent_shutdown(struct iked *env)
-{
-	proc_kill(&env->sc_ps);
-
-	free(env);
-
-	log_warnx("parent terminating");
-	exit(0);
 }
