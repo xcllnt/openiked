@@ -1873,31 +1873,27 @@ pfkey_timer_cb(int unused, short event, void *arg)
 int
 pfkey_process(struct iked *env, struct pfkey_message *pm)
 {
+	struct iked_addr	 peer;
+	struct iked_flow	 flow;
 	struct iked_spi		 spi;
+	struct sadb_msg		 smsg;
 	struct sadb_sa		*sa;
 	struct sadb_lifetime	*sa_ltime;
 	struct sadb_msg		*hdr;
-#if defined(_OPENBSD_IPSEC_API_VERSION)
-	struct sadb_msg		 smsg;
-	struct iked_addr	 peer;
-	struct iked_flow	 flow;
+	struct sockaddr		*ssrc, *sdst, *speer;
 	struct sadb_address	*sa_addr;
-	struct sadb_protocol	*sa_proto;
-	struct sadb_x_policy	 sa_pol;
-	struct sockaddr		*ssrc, *sdst, *smask, *dmask, *speer;
 	struct iovec		 iov[IOV_CNT];
-	int			 iov_cnt, sd;
 	uint8_t			*reply;
 	ssize_t			 rlen;
+	int			 iov_cnt, sd;
+#if defined(_OPENBSD_IPSEC_API_VERSION)
+	struct sadb_protocol	*sa_proto;
+	struct sadb_x_policy	 sa_pol;
+	struct sockaddr		*smask, *dmask;
 	const char		*errmsg = NULL;
 	size_t			 slen;
 #else
-	struct iked_addr	 peer;
-	struct sadb_address	*sa_addr;
-	struct sockaddr		*speer;
 	struct sadb_x_policy	*sa_pol;
-	struct iked_flow	 flow;
-	struct sockaddr		*ssrc;
 #endif
 	uint8_t			*data = pm->pm_data;
 	ssize_t			 len = pm->pm_length;
@@ -1931,8 +1927,9 @@ pfkey_process(struct iked *env, struct pfkey_message *pm)
 		memset(&flow, 0, sizeof(flow));
 		flow.flow_peer = &peer;
 
-#if defined(_OPENBSD_IPSEC_API_VERSION)
 		sd = env->sc_pfkey;
+
+#if defined(_OPENBSD_IPSEC_API_VERSION)
 
 		/* get the matching flow */
 		bzero(&smsg, sizeof(smsg));
@@ -2074,42 +2071,85 @@ out:
 #elif defined(SADB_X_EXT_POLICY)
 
 		/*
-		 * On an upcall from the kernel, reconstruct iked_flow with
-		 * src and dest from upcall message. Then proceed onto
-		 * establishing the SA.
+		 * The SADB_ACQUIRE message only have the local and peer
+		 * addresses. We need to get the flow addresses via a
+		 * SADB_X_SPDGET message.
 		 */
-		flow.flow_dst = peer;
-		if (flow.flow_dst.addr.ss_family == AF_INET)
-			flow.flow_dst.addr_mask = 32;
 
 		sa_pol = pfkey_find_ext(data, len, SADB_X_EXT_POLICY);
 		if (sa_pol == NULL) {
 			log_debug("%s: no policy extension", __func__);
 			return (0);
 		}
+		flow.flow_dir = sa_pol->sadb_x_policy_dir;
 
-		sa_addr = pfkey_find_ext(data, len, SADB_EXT_ADDRESS_SRC);
+		iov_cnt = 0;
+
+		bzero(&smsg, sizeof(smsg));
+		smsg.sadb_msg_version = PF_KEY_V2;
+		smsg.sadb_msg_seq = ++sadb_msg_seq;
+		smsg.sadb_msg_pid = getpid();
+		smsg.sadb_msg_len = (sizeof(smsg) + sizeof(*sa_pol))/ 8;
+		smsg.sadb_msg_type = SADB_X_SPDGET;
+		smsg.sadb_msg_satype = SADB_SATYPE_UNSPEC;
+		iov[iov_cnt].iov_base = &smsg;
+		iov[iov_cnt].iov_len = sizeof(smsg);
+		iov_cnt++;
+
+		sa_pol->sadb_x_policy_len = sizeof(*sa_pol) / 8;
+		iov[iov_cnt].iov_base = sa_pol;
+		iov[iov_cnt].iov_len = sizeof(*sa_pol);
+		iov_cnt++;
+
+		if (pfkey_write(sd, &smsg, iov, iov_cnt, &reply, &rlen)) {
+			log_warnx("%s: failed to get a policy", __func__);
+			return (0);
+		}
+
+		sa_addr = pfkey_find_ext(reply, rlen, SADB_EXT_ADDRESS_SRC);
 		if (sa_addr == NULL) {
 			log_debug("%s: no src in ext_policy upcall", __func__);
+			free(reply);
 			return (0);
 		}
 		ssrc = (struct sockaddr*)(sa_addr + 1);
 		memcpy(&flow.flow_src.addr, ssrc, sizeof(*ssrc));
 		flow.flow_src.addr_port = htons(socket_getport(ssrc));
-		if (flow.flow_src.addr.ss_family == AF_INET)
-			flow.flow_src.addr_mask = 32;
-
+		flow.flow_src.addr_mask = sa_addr->sadb_address_prefixlen;
 		if (socket_af((struct sockaddr *)&flow.flow_src.addr,
 		    flow.flow_src.addr_port) == -1) {
-			log_debug("%s: invalid address", __func__);
+			log_debug("%s: invalid src address", __func__);
+			free(reply);
 			return (0);
 		}
 
-		log_debug("%s: flow %s from to %s ", __func__,
-		    print_host((void *)&flow.flow_src.addr, NULL, 0),
-		    print_host((void *)&flow.flow_dst.addr, NULL, 0));
+		sa_addr = pfkey_find_ext(reply, rlen, SADB_EXT_ADDRESS_DST);
+		if (sa_addr == NULL) {
+			log_debug("%s: no dst in ext_policy upcall", __func__);
+			free(reply);
+			return (0);
+		}
+		sdst = (struct sockaddr*)(sa_addr + 1);
+		memcpy(&flow.flow_dst.addr, sdst, sizeof(*sdst));
+		flow.flow_dst.addr_port = htons(socket_getport(sdst));
+		flow.flow_dst.addr_mask = sa_addr->sadb_address_prefixlen;
+		if (socket_af((struct sockaddr *)&flow.flow_dst.addr,
+		    flow.flow_dst.addr_port) == -1) {
+			log_debug("%s: invalid dst address", __func__);
+			free(reply);
+			return (0);
+		}
 
-		ikev2_acquire_sa(env, &flow);
+		log_debug("%s: flow %s from %s/%d to %s/%d via %s", __func__,
+		    flow.flow_dir == IPSP_DIRECTION_IN ? "in" : "out",
+		    print_host(ssrc, NULL, 0), flow.flow_src.addr_mask,
+		    print_host(sdst, NULL, 0), flow.flow_dst.addr_mask,
+		    print_host(speer, NULL, 0));
+
+		/* Free after the debug log above! */
+		free(reply);
+
+		ret = ikev2_acquire_sa(env, &flow);
 #endif
 		break;
 
