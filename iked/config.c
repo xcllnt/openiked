@@ -76,6 +76,7 @@ config_replace(struct iked *env, struct iked_config *new)
 	struct iked_sa		*sa, *satmp;
 	struct iked_policy	*pol, *polkey;
 	struct iked_user	*usr;
+	int			 ret;
 
 	/*
 	 * Walk current policies and transfer state to new policies
@@ -99,10 +100,18 @@ config_replace(struct iked *env, struct iked_config *new)
 			flow = (pol == NULL) ? NULL :
 			    policy_find_flow(pol, flowkey, 0);
 			if (flow != NULL) {
-				flow->flow_loaded = 1;
+				flow->flow_loaded = flowkey->flow_loaded;
+				flow->flow_saproto = flowkey->flow_saproto;
+				flow->flow_transport = flowkey->flow_transport;
+				flow->flow_dir = flowkey->flow_dir;
+				flow->flow_local = &pol->pol_local;
+				flow->flow_peer = &pol->pol_peer;
 				flowkey->flow_loaded = 0;
-			} else
-				pfkey_flow_delete(env->sc_pfkey, flowkey);
+			} else {
+				ret = pfkey_flow_delete(env->sc_pfkey, flowkey);
+				if (ret)
+					log_debug("pfkey_flow_delete failed");
+			}
 		}
 	}
 
