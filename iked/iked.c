@@ -1,4 +1,4 @@
-/*	$OpenBSD: iked.c,v 1.30 2015/12/07 12:46:37 reyk Exp $	*/
+/*	$OpenBSD: iked.c,v 1.31 2016/09/04 16:55:43 reyk Exp $	*/
 
 /*
  * Copyright (c) 2010-2013 Reyk Floeter <reyk@openbsd.org>
@@ -375,6 +375,12 @@ parent_dispatch_control(int fd, struct privsep_proc *p, struct imsg *imsg)
 		parent_reload(env, RESET_RELOAD, str);
 		free(str);
 		break;
+	case IMSG_CTL_VERBOSE:
+		proc_forward_imsg(&env->sc_ps, imsg, PROC_IKEV2, -1);
+		proc_forward_imsg(&env->sc_ps, imsg, PROC_CERT, -1);
+
+		/* return 1 to let proc.c handle it locally */
+		return (1);
 	default:
 		return (-1);
 	}
