@@ -213,7 +213,7 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 	flow_src = &flow->flow_src;
 	flow_dst = &flow->flow_dst;
 
-	if (flow->flow_prenat.addr_af == flow_src->addr_af) {
+	if (flow->flow_prenat.addr.ss_family == flow_src->addr.ss_family) {
 		switch (flow->flow_type) {
 		case SADB_X_FLOW_TYPE_USE:
 			flow_dst = &flow->flow_prenat;
