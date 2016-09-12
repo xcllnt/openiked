@@ -32,6 +32,7 @@
 #if defined(HAVE_NET_PFKEYV2_H)
 #include <net/pfkeyv2.h>
 #endif
+#include <netinet/udp.h>
 
 #include <err.h>
 #include <errno.h>
@@ -659,8 +660,11 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 	struct sadb_x_sa2	 sa_2;
 #if defined(HAVE_APPLE_NATT)
 	struct sadb_sa_natt	 natt;
-#endif
-#endif
+#else
+	struct sadb_x_nat_t_type nat_type;
+	struct sadb_x_nat_t_port nat_sport, nat_dport;
+#endif /* HAVE_APPLE_NATT */
+#endif /* _OPENBSD_IPSEC_API_VERSION */
 	struct sockaddr_storage  ssrc, sdst;
 	struct sadb_ident	*sa_srcid, *sa_dstid;
 	struct iked_lifetime	*lt;
@@ -731,11 +735,6 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 
 	bzero(&sa_authkey, sizeof(sa_authkey));
 	bzero(&sa_enckey, sizeof(sa_enckey));
-#if defined(_OPENBSD_IPSEC_API_VERSION)
-	bzero(&udpencap, sizeof udpencap);
-#elif defined(HAVE_APPLE_NATT)
-	bzero(&natt, sizeof(natt));
-#endif
 	bzero(&sa_ltime_hard, sizeof(sa_ltime_hard));
 	bzero(&sa_ltime_soft, sizeof(sa_ltime_soft));
 
@@ -774,12 +773,17 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 
 	if (sa->csa_ikesa->sa_udpencap && sa->csa_ikesa->sa_natt) {
 #if defined(_OPENBSD_IPSEC_API_VERSION)
+		bzero(&udpencap, sizeof udpencap);
 		sadb.sadb_sa_flags |= SADB_X_SAFLAGS_UDPENCAP;
 		udpencap.sadb_x_udpencap_exttype = SADB_X_EXT_UDPENCAP;
 		udpencap.sadb_x_udpencap_len = sizeof(udpencap) / 8;
 		udpencap.sadb_x_udpencap_port =
 		    sa->csa_ikesa->sa_peer.addr_port;
+
+		log_debug("%s: udpencap port %u", __func__,
+		    ntohs(sa->csa_ikesa->sa_peer.addr_port));
 #elif defined(HAVE_APPLE_NATT)
+		bzero(&natt, sizeof(natt));
 		sadb.sadb_sa_flags |= SADB_X_EXT_NATT;
 		/* XXX check NAT detection for local/peer hash instead */
 		if (sa->csa_dir == IPSP_DIRECTION_OUT)
@@ -788,11 +792,33 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 			sadb.sadb_sa_flags |= SADB_X_EXT_NATT_DETECTED_PEER;
 		natt.sadb_sa_natt_port =
 		    ntohs(sa->csa_ikesa->sa_peer.addr_port);
-#else
-#warning PFKEYv2 NAT-T not supported
-#endif
+
 		log_debug("%s: udpencap port %u", __func__,
-		    ntohs(sa->csa_ikesa->sa_peer.addr_port));
+		    natt.sadb_sa_natt_port);
+#else
+		bzero(&nat_type, sizeof(nat_type));
+		nat_type.sadb_x_nat_t_type_len = sizeof(nat_type) / 8;
+		nat_type.sadb_x_nat_t_type_exttype = SADB_X_EXT_NAT_T_TYPE;
+		nat_type.sadb_x_nat_t_type_type = UDP_ENCAP_ESPINUDP;
+		bzero(&nat_sport, sizeof(nat_sport));
+		nat_sport.sadb_x_nat_t_port_len = sizeof(nat_sport) / 8;
+		nat_sport.sadb_x_nat_t_port_exttype = SADB_X_EXT_NAT_T_SPORT;
+		nat_sport.sadb_x_nat_t_port_port =
+		    sa->csa_ikesa->sa_local.addr_port;
+		bzero(&nat_dport, sizeof(nat_dport));
+		nat_dport.sadb_x_nat_t_port_len = sizeof(nat_dport) / 8;
+		nat_dport.sadb_x_nat_t_port_exttype = SADB_X_EXT_NAT_T_DPORT;
+		nat_dport.sadb_x_nat_t_port_port =
+		    sa->csa_ikesa->sa_peer.addr_port;
+
+		log_debug("%s: NAT-T: type=%s (%d) sport=%d dport=%d",
+		    __func__,
+		    (nat_type.sadb_x_nat_t_type_type == UDP_ENCAP_ESPINUDP)
+		    ? "UDP encap" : "unknown",
+		    nat_type.sadb_x_nat_t_type_type,
+		    ntohs(nat_sport.sadb_x_nat_t_port_port),
+		    ntohs(nat_dport.sadb_x_nat_t_port_port));
+#endif
 	}
 
 
@@ -878,7 +904,7 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 	iov[iov_cnt].iov_base = &sadb;
 	iov[iov_cnt].iov_len = sizeof(sadb);
 #if defined(HAVE_APPLE_NATT)
-	if (natt.sadb_sa_natt_port) {
+	if (sa->csa_ikesa->sa_udpencap && sa->csa_ikesa->sa_natt) {
 		iov_cnt++;
 		iov[iov_cnt].iov_base = &natt;
 		iov[iov_cnt].iov_len = sizeof(natt);
@@ -930,14 +956,27 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 		iov_cnt++;
 	}
 
+	if (sa->csa_ikesa->sa_udpencap && sa->csa_ikesa->sa_natt) {
 #if defined(_OPENBSD_IPSEC_API_VERSION)
-	if (udpencap.sadb_x_udpencap_len) {
 		iov[iov_cnt].iov_base = &udpencap;
 		iov[iov_cnt].iov_len = sizeof(udpencap);
 		smsg.sadb_msg_len += udpencap.sadb_x_udpencap_len;
 		iov_cnt++;
-	}
+#elif !defined(HAVE_APPLE_NATT)
+		iov[iov_cnt].iov_base = &nat_type;
+		iov[iov_cnt].iov_len = sizeof(nat_type);
+		smsg.sadb_msg_len += nat_type.sadb_x_nat_t_type_len;
+		iov_cnt++;
+		iov[iov_cnt].iov_base = &nat_sport;
+		iov[iov_cnt].iov_len = sizeof(nat_sport);
+		smsg.sadb_msg_len += nat_sport.sadb_x_nat_t_port_len;
+		iov_cnt++;
+		iov[iov_cnt].iov_base = &nat_dport;
+		iov[iov_cnt].iov_len = sizeof(nat_dport);
+		smsg.sadb_msg_len += nat_dport.sadb_x_nat_t_port_len;
+		iov_cnt++;
 #endif
+	}
 
 	if (sa_enckey.sadb_key_len) {
 		/* encryption key */

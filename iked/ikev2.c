@@ -22,6 +22,7 @@
 #include <sys/uio.h>
 
 #include <netinet/in.h>
+#include <netinet/udp.h>
 #if defined(HAVE_NETIPSEC_IPSEC_H)
 #include <netipsec/ipsec.h>
 #endif
@@ -688,6 +689,9 @@ ikev2_init_recv(struct iked *env, struct iked_message *msg,
 	struct iked_sa		*sa;
 	in_port_t		 port;
 	struct iked_socket	*sock;
+#if !defined(_OPENBSD_IPSEC_API_VERSION) && !defined(HAVE_APPLE_NATT)
+	int			 sopt;
+#endif
 
 	if (ikev2_msg_valid_ike_sa(env, hdr, msg) == -1) {
 		log_debug("%s: unknown SA", __func__);
@@ -749,6 +753,16 @@ ikev2_init_recv(struct iked *env, struct iked_message *msg,
 		    "peer %s local %s", __func__,
 		    print_host((struct sockaddr *)&sa->sa_peer.addr, NULL, 0),
 		    print_host((struct sockaddr *)&sa->sa_local.addr, NULL, 0));
+
+#if !defined(_OPENBSD_IPSEC_API_VERSION) && !defined(HAVE_APPLE_NATT)
+		sopt = UDP_ENCAP_ESPINUDP;
+		if (setsockopt(sock->sock_fd, IPPROTO_UDP, UDP_ENCAP,
+		    &sopt, sizeof(sopt)) < 0) {
+			log_warn("%s: failed to set UDP encap socket option",
+			    __func__);
+			return;
+		}
+#endif
 	}
 
 	switch (hdr->ike_exchange) {
