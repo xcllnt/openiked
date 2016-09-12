@@ -254,8 +254,9 @@ parent_configure(struct iked *env, struct iked_config *config)
 	 * inet - for ocsp connect.
 	 * route - for using interfaces in iked.conf (SIOCGIFGMEMB)
 	 * sendfd - for ocsp sockets.
+	 * exec - for using execve to restart.
 	 */
-	if (pledge("stdio rpath proc dns inet route sendfd", NULL) == -1)
+	if (pledge("stdio rpath proc dns inet route sendfd exec", NULL) == -1)
 		fatal("pledge");
 
 	return (config_apply(env, config));
