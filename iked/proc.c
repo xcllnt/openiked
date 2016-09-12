@@ -134,7 +134,8 @@ proc_reap(struct privsep *ps, pid_t pid, int status)
 		return (0);
 
 	if (WIFSIGNALED(status)) {
-		ps->ps_restart = 1;
+		if (WTERMSIG(status) != SIGKILL)
+			ps->ps_restart = 1;
 		log_warnx("%s[%d] terminated with signal %d",
 		    ps->ps_title[id], pid, WTERMSIG(status));
 	} else if (WIFEXITED(status)) {
