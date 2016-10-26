@@ -1,6 +1,7 @@
 /*	$OpenBSD: policy.c,v 1.42 2016/06/01 11:16:41 patrick Exp $	*/
 
 /*
+ * Copyright (c) 2016 Marcel Moolenaar <marcel@brkt.com>
  * Copyright (c) 2010-2013 Reyk Floeter <reyk@openbsd.org>
  * Copyright (c) 2001 Daniel Hartmeier
  *
