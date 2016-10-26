@@ -54,11 +54,6 @@ using manual keying or automatic keying using the older ISAKMP/Oakley
 a.k.a. IKEv1 protocol.
 Manual keying is not recommended, but can be convenient for quick
 setups and testing.
-See
-.Xr ipsec.conf 5
-and
-.Xr isakmpd 8
-for more information about manual keying and ISAKMP support.
 .Sh IKED.CONF FILE FORMAT
 .Nm
 is divided into three main sections:
@@ -231,9 +226,10 @@ option sets the default policy and should only be specified once.
 .Ar mode
 specifies the IKEv2 mode to use:
 one of
-.Ar passive
+.Ar passive ,
+.Ar active
 or
-.Ar active .
+.Ar lazy .
 When
 .Ar passive
 is specified,
@@ -243,6 +239,11 @@ request from the remote peer.
 When
 .Ar active
 is specified, negotiation will be started at once.
+When
+.Ar lazy
+is specified, negotiation will start if and when needed.
+A negotiation is needed when a packet matches the flow and there is no
+association for it yet.
 If omitted,
 .Ar passive
 mode will be used.
@@ -327,9 +328,7 @@ and
 .Xr udp 4
 protocols.
 Ports can be specified by number or by name.
-For a list of all port name to number mappings used by
-.Xr ipsecctl 8 ,
-see the file
+For a list of all port name to number mappings, see the file
 .Pa /etc/services .
 .It Ic local Ar localip Ic peer Ar remote
 The
@@ -351,6 +350,9 @@ automatically.
 If it is not specified or if the keyword
 .Ar any
 is given, the default peer is used.
+Note that when these parameters are omitted,
+.Xr iked 8
+will attempt to negotiate transport mode IPSec.
 .It Xo
 .Ic ikesa
 .Ic auth Ar algorithm
@@ -579,120 +581,10 @@ for filtering and monitoring.
 The traffic will be blocked if the specified
 .Ar interface
 does not exist.
+This option is only valid with the operating system has or supports the
+.Xr enc 4
+interface.
 .El
-.Sh PACKET FILTERING
-IPsec traffic appears unencrypted on the
-.Xr enc 4
-interface
-and can be filtered accordingly using the
-.Ox
-packet filter,
-.Xr pf 4 .
-The grammar for the packet filter is described in
-.Xr pf.conf 5 .
-.Pp
-The following components are relevant to filtering IPsec traffic:
-.Bl -ohang -offset indent
-.It external interface
-Interface for IKE traffic and encapsulated IPsec traffic.
-.It proto udp port 500
-IKE traffic on the external interface.
-.It proto udp port 4500
-IKE NAT-Traversal traffic on the external interface.
-.It proto ah | esp
-Encapsulated IPsec traffic
-on the external interface.
-.It enc0
-Default interface for outgoing traffic before it's been encapsulated,
-and incoming traffic after it's been decapsulated.
-State on this interface should be interface bound;
-see
-.Xr enc 4
-for further information.
-.It proto ipencap
-[tunnel mode only]
-IP-in-IP traffic flowing between gateways
-on the enc0 interface.
-.It tagged ipsec-example.org
-Match traffic of IPsec SAs using the
-.Ic tag
-keyword.
-.El
-.Pp
-If the filtering rules specify to block everything by default,
-the following rule
-would ensure that IPsec traffic never hits the packet filtering engine,
-and is therefore passed:
-.Bd -literal -offset indent
-set skip on enc0
-.Ed
-.Pp
-In the following example, all traffic is blocked by default.
-IPsec-related traffic from gateways {192.168.3.1, 192.168.3.2} and
-networks {10.0.1.0/24, 10.0.2.0/24} is permitted.
-.Bd -literal -offset indent
-block on ix0
-block on enc0
-
-pass  in on ix0 proto udp from 192.168.3.2 to 192.168.3.1 \e
-	port {500, 4500}
-pass out on ix0 proto udp from 192.168.3.1 to 192.168.3.2 \e
-	port {500, 4500}
-
-pass  in on ix0 proto esp from 192.168.3.2 to 192.168.3.1
-pass out on ix0 proto esp from 192.168.3.1 to 192.168.3.2
-
-pass  in on enc0 proto ipencap from 192.168.3.2 to 192.168.3.1 \e
-	keep state (if-bound)
-pass out on enc0 proto ipencap from 192.168.3.1 to 192.168.3.2 \e
-	keep state (if-bound)
-pass  in on enc0 from 10.0.2.0/24 to 10.0.1.0/24 \e
-	keep state (if-bound)
-pass out on enc0 from 10.0.1.0/24 to 10.0.2.0/24 \e
-	keep state (if-bound)
-.Ed
-.Pp
-.Xr pf 4
-has the ability to filter IPsec-related packets
-based on an arbitrary
-.Em tag
-specified within a ruleset.
-The tag is used as an internal marker
-which can be used to identify the packets later on.
-This could be helpful,
-for example,
-in scenarios where users are connecting in from differing IP addresses,
-or to support queue-based bandwidth control,
-since the enc0 interface does not support it.
-.Pp
-The following
-.Xr pf.conf 5
-fragment uses queues for all IPsec traffic with special
-handling for developers and employees:
-.Bd -literal -offset indent
-queue std on ix0 bandwidth 100M
-queue   deflt parent std bandwidth 10M default
-queue   developers parent std bandwidth 75M
-queue   employees parent std bandwidth 5M
-queue   ipsec parent std bandwidth 10M
-
-pass out on ix0 proto esp set queue ipsec
-
-pass out on ix0 tagged ipsec-developers.example.com \e
-	set queue developers
-pass out on ix0 tagged ipsec-employees.example.com \e
-	set queue employees
-.Ed
-.Pp
-The following example assigns the tags in the
-.Nm
-configuration and also sets an alternative
-.Xr enc 4
-device:
-.Bd -literal -offset indent
-ikev2 esp from 10.1.1.0/24 to 10.1.2.0/24 peer 192.168.3.2 \e
-	tag ipsec-$domain tap "enc1"
-.Ed
 .Sh OUTGOING NETWORK ADDRESS TRANSLATION
 In some network topologies it is desirable to perform NAT on traffic leaving
 through the VPN tunnel.
@@ -712,16 +604,6 @@ the following configuration is used:
 .Bd -literal -offset indent
 ikev2 esp from 10.10.10.1 (192.168.1.0/24) to 192.168.2.0/24 \e
 	peer 10.10.20.1
-.Ed
-.Pp
-Naturally,
-a relevant NAT rule is required in
-.Xr pf.conf 5 .
-For the example above,
-this would be:
-.Bd -literal -offset indent
-match out on enc0 from 192.168.1.0/24 to 192.168.2.0/24 \e
-	nat-to 10.10.10.1
 .Ed
 .Pp
 From the peer's point of view,
@@ -888,8 +770,6 @@ ikev2 esp from 10.0.5.8/30 to 10.0.5.12/30 peer 192.168.1.3
 .Sh SEE ALSO
 .Xr enc 4 ,
 .Xr ipsec 4 ,
-.Xr ipsec.conf 5 ,
-.Xr pf.conf 5 ,
 .Xr ikectl 8 ,
 .Xr iked 8
 .Sh HISTORY
@@ -898,7 +778,9 @@ The
 file format first appeared in
 .Ox 4.8 .
 .Sh AUTHORS
-The
+This version of the
 .Xr iked 8
 program was written by
-.An Reyk Floeter Aq Mt reyk@openbsd.org .
+.An Reyk Floeter Aq Mt reyk@openbsd.org ,
+with modifications and enhancements by
+.An Marcel Moolenaar Aq Mt marcel@brkt.com .
