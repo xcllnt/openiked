@@ -13,8 +13,9 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-dnl AC_INIT([OpenIKED-portable],[5.2.0p0],[Reyk Floeter <reyk@openbsd.org>])
-AC_INIT([OpenIKED-portable], m4_esyscmd(date +%Y%m%d%H%M%S | sed -e 's/^\(.*\)$/5.2-\1/' | tr -d '\n'),[Reyk Floeter <reyk@openbsd.org>])
+AC_INIT([OpenIKED],
+        m4_esyscmd([git log --pretty=format:'(%h)' -n 1]),
+        [Marcel Moolenaar <marcel@brkt.com>])
 AC_LANG([C])
 AC_CONFIG_MACRO_DIR([m4])
 
