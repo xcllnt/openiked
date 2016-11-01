@@ -34,10 +34,10 @@ install-exec-hook: $(MANPAGES)
 	$(MKDIR_P) $(DESTDIR)$(sbindir)
 	$(MKDIR_P) $(DESTDIR)$(mandir)/$(mansubdir)8
 
-	@if [ ! -f $(DESTDIR)$(SSLDIR)/ikeca.cnf ]; then \
-		$(INSTALL) -m 644 ikeca.cnf $(DESTDIR)$(SSLDIR)/ikeca.cnf; \
+	@if [ ! -f $(DESTDIR)$(sysconfdir)/ikeca.cnf ]; then \
+		$(INSTALL) -m 644 ikeca.cnf $(DESTDIR)$(sysconfdir)/ikeca.cnf; \
 	else \
-		echo "$(DESTDIR)$(SSLDIR)/ikeca.cnf already exists, install will not overwrite"; \
+		echo "$(DESTDIR)$(sysconfdir)/ikeca.cnf already exists, install will not overwrite"; \
 	fi
 
-	$(INSTALL) -m 644 ikectl.8.out		$(DESTDIR)$(mandir)/$(mansubdir)8/ikectl.8
+	$(INSTALL) -m 644 ikectl.8.out $(DESTDIR)$(mandir)/$(mansubdir)8/ikectl.8

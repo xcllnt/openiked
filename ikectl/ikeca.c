@@ -46,7 +46,7 @@
 #endif
 #define SSL_CNF		SSLDIR "/openssl.cnf"
 #define X509_CNF	SSLDIR "/x509v3.cnf"
-#define IKECA_CNF	SSLDIR "/ikeca.cnf"
+#define IKECA_CNF	PREFIX "/etc/ikeca.cnf"
 #define KEYBASE		PREFIX "/etc/iked"
 #ifndef EXPDIR
 #define EXPDIR		PREFIX "/usr/share/iked"
