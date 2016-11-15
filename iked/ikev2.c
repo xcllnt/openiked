@@ -687,6 +687,7 @@ void
 ikev2_init_recv(struct iked *env, struct iked_message *msg,
     struct ike_header *hdr)
 {
+	struct timeval		 tv;
 	struct iked_sa		*sa;
 	in_port_t		 port;
 	struct iked_socket	*sock;
@@ -784,6 +785,9 @@ ikev2_init_recv(struct iked *env, struct iked_message *msg,
 		    print_map(hdr->ike_exchange, ikev2_exchange_map));
 		break;
 	}
+
+	gettimeofday(&tv, NULL);
+	sa->sa_last_used = tv.tv_sec;
 }
 
 static void
@@ -2048,6 +2052,7 @@ void
 ikev2_resp_recv(struct iked *env, struct iked_message *msg,
     struct ike_header *hdr)
 {
+	struct timeval		 tv;
 	struct iked_sa		*sa;
 
 	switch (hdr->ike_exchange) {
@@ -2154,6 +2159,9 @@ ikev2_resp_recv(struct iked *env, struct iked_message *msg,
 	default:
 		break;
 	}
+
+	gettimeofday(&tv, NULL);
+	sa->sa_last_used = tv.tv_sec;
 }
 
 int
@@ -3421,7 +3429,7 @@ ikev2_ike_sa_alive(struct iked *env, void *arg)
 		if (pfkey_sa_last_used(env->sc_pfkey, csa, &last_used) != 0)
 			continue;
 #else
-		last_used = tv.tv_sec;	/* XXX */
+		last_used = sa->sa_last_used;
 #endif
 		diff = (uint32_t)(tv.tv_sec - last_used);
 		log_debug("%s: %s CHILD SA spi %s last used %llu second(s) ago",
@@ -3439,8 +3447,8 @@ ikev2_ike_sa_alive(struct iked *env, void *arg)
 		}
 	}
 
-	/* send probe if any outging SA has been used, but no incoming SA */
-	if (!foundin && foundout) {
+	/* send probe if no traffic has been seen (per direction) */
+	if (!foundin || !foundout) {
 		log_debug("%s: sending alive check", __func__);
 		ikev2_send_ike_e(env, sa, NULL, IKEV2_PAYLOAD_NONE,
 		    IKEV2_EXCHANGE_INFORMATIONAL, 0);

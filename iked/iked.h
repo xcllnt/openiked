@@ -439,6 +439,7 @@ struct iked_sa {
 	uint16_t			 sa_cpi_out;	/* IPcomp outgoing */
 	uint16_t			 sa_cpi_in;	/* IPcomp incoming*/
 
+	time_t				 sa_last_used;	/* Last IKE packet */
 	struct iked_timer		 sa_timer;	/* SA timeouts */
 #define IKED_IKE_SA_DELETE_TIMEOUT	 300		/* 5 minutes */
 #define IKED_IKE_SA_ALIVE_TIMEOUT	 60		/* 1 minute */
