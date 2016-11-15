@@ -2056,12 +2056,21 @@ ikev2_resp_recv(struct iked *env, struct iked_message *msg,
 			log_debug("%s: SA already exists", __func__);
 			return;
 		}
-		if ((msg->msg_sa = sa_new(env,
-		    betoh64(hdr->ike_ispi), betoh64(hdr->ike_rspi),
-		    0, msg->msg_policy)) == NULL) {
+		sa = sa_new(env, betoh64(hdr->ike_ispi),
+		    betoh64(hdr->ike_rspi), 0, msg->msg_policy);
+		if (sa == NULL) {
 			log_debug("%s: failed to get new SA", __func__);
 			return;
 		}
+		if (sa->sa_local.addr.ss_family == AF_UNSPEC) {
+			sa->sa_local.addr = msg->msg_local;
+			socket_af((struct sockaddr *)&sa->sa_local.addr, 0);
+		}
+		if (sa->sa_peer.addr.ss_family == AF_UNSPEC) {
+			sa->sa_peer.addr = msg->msg_peer;
+			socket_af((struct sockaddr *)&sa->sa_peer.addr, 0);
+		}
+		msg->msg_sa = sa;
 		break;
 	case IKEV2_EXCHANGE_IKE_AUTH:
 		if (ikev2_msg_valid_ike_sa(env, hdr, msg) == -1)
