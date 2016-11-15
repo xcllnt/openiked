@@ -14,7 +14,7 @@
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 AC_INIT([OpenIKED],
-        m4_esyscmd([git log --pretty=format:'(%h)' -n 1]),
+        [1.1],
         [Marcel Moolenaar <marcel@brkt.com>])
 AC_LANG([C])
 AC_CONFIG_MACRO_DIR([m4])
