@@ -419,8 +419,6 @@ recvfromto(int s, void *buf, size_t len, int flags, struct sockaddr *from,
 		return (-1);
 
 	*fromlen = SA_LEN(from);
-	*tolen = 0;
-
 	if (getsockname(s, to, tolen) != 0)
 		*tolen = 0;
 
