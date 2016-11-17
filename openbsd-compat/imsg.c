@@ -139,6 +139,17 @@ again:
 		/* we do not handle other ctl data level */
 	}
 
+	/*
+	 * If we got a file descriptor (ifd == NULL) but no data (n == 0),
+	 * then return -1 with errno set to EAGAIN.  We can't return 0,
+	 * because that signals a dead pipe. That typically causes the
+	 * process to end...
+	 */
+	if (ifd == NULL && n == 0) {
+		errno = EAGAIN;
+		n = -1;
+	}
+
 fail:
 	free(ifd);
 	return (n);
