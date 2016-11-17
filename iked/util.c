@@ -528,7 +528,6 @@ void
 print_hex(uint8_t *buf, off_t offset, size_t length)
 {
 	unsigned int	 i;
-	extern int	 verbose;
 
 	if (verbose < 3 || !length)
 		return;
