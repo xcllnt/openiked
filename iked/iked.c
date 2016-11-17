@@ -76,29 +76,15 @@ main(int argc, char *argv[], char *envp[])
 
 	log_init(1, LOG_DAEMON);
 
-	while ((c = getopt(argc, argv, "6dD:nf:vSTt")) != -1) {
+	while ((c = getopt(argc, argv, "6D:STdf:ntv")) != -1) {
 		switch (c) {
 		case '6':
 			opts |= IKED_OPT_NOIPV6BLOCKING;
-			break;
-		case 'd':
-			debug++;
 			break;
 		case 'D':
 			if (cmdline_symset(optarg) < 0)
 				log_warnx("could not parse macro definition %s",
 				    optarg);
-			break;
-		case 'n':
-			debug = 1;
-			opts |= IKED_OPT_NOACTION;
-			break;
-		case 'f':
-			conffile = optarg;
-			break;
-		case 'v':
-			verbose++;
-			opts |= IKED_OPT_VERBOSE;
 			break;
 		case 'S':
 			opts |= IKED_OPT_PASSIVE;
@@ -106,8 +92,22 @@ main(int argc, char *argv[], char *envp[])
 		case 'T':
 			opts |= IKED_OPT_NONATT;
 			break;
+		case 'd':
+			debug++;
+			break;
+		case 'f':
+			conffile = optarg;
+			break;
+		case 'n':
+			debug = 1;
+			opts |= IKED_OPT_NOACTION;
+			break;
 		case 't':
 			opts |= IKED_OPT_NATT;
+			break;
+		case 'v':
+			verbose++;
+			opts |= IKED_OPT_VERBOSE;
 			break;
 		default:
 			usage();
