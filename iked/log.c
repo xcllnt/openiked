@@ -157,7 +157,7 @@ log_debug(const char *emsg, ...)
 
 	if (verbose > 1) {
 		va_start(ap, emsg);
-		vlog(LOG_DEBUG, emsg, ap);
+		vlog(LOG_INFO, emsg, ap);
 		va_end(ap);
 	}
 }
