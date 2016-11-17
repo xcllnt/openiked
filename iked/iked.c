@@ -49,6 +49,27 @@ static struct privsep_proc procs[] = {
 	{ "ikev2",	PROC_IKEV2,	NULL, ikev2 }
 };
 
+static struct {
+	const char *name;
+	int val;
+} log_facilities[] = {
+	{ "daemon",	LOG_DAEMON },
+	{ "user",	LOG_USER },
+	{ "auth",	LOG_AUTH },
+#ifdef LOG_AUTHPRIV
+	{ "authpriv",	LOG_AUTHPRIV },
+#endif
+	{ "local0",	LOG_LOCAL0 },
+	{ "local1",	LOG_LOCAL1 },
+	{ "local2",	LOG_LOCAL2 },
+	{ "local3",	LOG_LOCAL3 },
+	{ "local4",	LOG_LOCAL4 },
+	{ "local5",	LOG_LOCAL5 },
+	{ "local6",	LOG_LOCAL6 },
+	{ "local7",	LOG_LOCAL7 },
+	{ NULL,		-1 }
+};
+
 __dead void
 usage(void)
 {
@@ -59,6 +80,22 @@ usage(void)
 	exit(1);
 }
 
+static void
+parse_facility(const char *facility, int *result)
+{
+	unsigned int idx;
+
+	idx = 0;
+	while (log_facilities[idx].name != NULL) {
+		if (strcasecmp(facility, log_facilities[idx].name) == 0) {
+			*result = log_facilities[idx].val;
+			return;
+		}
+		idx++;
+	}
+	log_warnx("%s: syslog facility unknown or invalid", facility);
+}
+
 int
 main(int argc, char *argv[], char *envp[])
 {
@@ -67,16 +104,17 @@ main(int argc, char *argv[], char *envp[])
 	const char		*conffile;
 	struct privsep		*ps;
 	unsigned int		 opts;
-	int			 c, debug, verbose;
+	int			 c, debug, facility, verbose;
 
 	conffile = IKED_CONFIG;
 	debug = 0;
+	facility = LOG_DAEMON;
 	opts = 0;
 	verbose = 0;
 
 	log_init(1, LOG_DAEMON);
 
-	while ((c = getopt(argc, argv, "6D:STdf:ntv")) != -1) {
+	while ((c = getopt(argc, argv, "6D:L:STdf:ntv")) != -1) {
 		switch (c) {
 		case '6':
 			opts |= IKED_OPT_NOIPV6BLOCKING;
@@ -85,6 +123,9 @@ main(int argc, char *argv[], char *envp[])
 			if (cmdline_symset(optarg) < 0)
 				log_warnx("could not parse macro definition %s",
 				    optarg);
+			break;
+		case 'L':
+			parse_facility(optarg, &facility);
 			break;
 		case 'S':
 			opts |= IKED_OPT_PASSIVE;
@@ -154,7 +195,7 @@ main(int argc, char *argv[], char *envp[])
 	/* Configure the control socket */
 	ps->ps_csock.cs_name = IKED_SOCKET;
 
-	log_init(debug, LOG_DAEMON);
+	log_init(debug, facility);
 	log_verbose(verbose);
 
 	if (!debug && daemon(0, 0) == -1)
