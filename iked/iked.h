@@ -929,7 +929,6 @@ const char *
 	 print_map(unsigned int, struct iked_constmap *);
 void	 lc_string(char *);
 void	 print_hex(uint8_t *, off_t, size_t);
-void	 print_hexval(uint8_t *, off_t, size_t);
 const char *
 	 print_bits(unsigned short, unsigned char *);
 int	 sockaddr_cmp(struct sockaddr *, struct sockaddr *, int);

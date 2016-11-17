@@ -545,21 +545,6 @@ print_hex(uint8_t *buf, off_t offset, size_t length)
 	print_debug("\n");
 }
 
-void
-print_hexval(uint8_t *buf, off_t offset, size_t length)
-{
-	unsigned int	 i;
-	extern int	 verbose;
-
-	if (verbose < 2 || !length)
-		return;
-
-	print_debug("0x");
-	for (i = 0; i < length; i++)
-		print_debug("%02x", buf[offset + i]);
-	print_debug("\n");
-}
-
 const char *
 print_bits(unsigned short v, unsigned char *bits)
 {
