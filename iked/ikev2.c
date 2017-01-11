@@ -5159,11 +5159,6 @@ ikev2_drop_sa(struct iked *env, struct iked_spi *drop)
 
 	sa->sa_stateflags |= IKED_REQ_INF;
 
-	/* Initiate Child SA creation */
-	if (ikev2_send_create_child_sa(env, sa, NULL, drop->spi_protoid))
-		log_warnx("%s: failed to initiate a CREATE_CHILD_SA exchange",
-		    __func__);
-
 done:
 	ibuf_release(buf);
 	return (0);
