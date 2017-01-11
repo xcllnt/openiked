@@ -1940,7 +1940,7 @@ pfkey_process(struct iked *env, struct pfkey_message *pm)
 	struct iked_spi		 spi;
 	struct sadb_msg		 smsg;
 	struct sadb_sa		*sa;
-	struct sadb_lifetime	*sa_ltime;
+	struct sadb_lifetime	*sa_ctime, *sa_ltime;
 	struct sadb_msg		*hdr;
 	struct sockaddr		*ssrc, *sdst, *speer;
 	struct sadb_address	*sa_addr;
@@ -1959,6 +1959,7 @@ pfkey_process(struct iked *env, struct pfkey_message *pm)
 #endif
 	uint8_t			*data = pm->pm_data;
 	ssize_t			 len = pm->pm_length;
+	int			 exttype, rekey;
 	int			 ret = 0;
 
 	if (!env || !data || !len)
@@ -2216,20 +2217,24 @@ out:
 		break;
 
 	case SADB_EXPIRE:
-		if ((sa = pfkey_find_ext(data, len, SADB_EXT_SA)) == NULL) {
-			log_warnx("%s: SA extension wasn't found", __func__);
+		sa = pfkey_find_ext(data, len, SADB_EXT_SA);
+		if (sa == NULL) {
+			log_warnx("%s: no SA extension", __func__);
 			return (0);
 		}
+
 		sa_ltime = pfkey_find_ext(data, len, SADB_EXT_LIFETIME_SOFT);
 		if (sa_ltime == NULL) {
+			rekey = 0;
 			sa_ltime = pfkey_find_ext(data, len,
 			    SADB_EXT_LIFETIME_HARD);
-			if (sa_ltime == NULL) {
-				log_warnx("%s: lifetime extension not found",
-				    __func__);
-				return (0);
-			}
+		} else
+			rekey = 1;
+		if (sa_ltime == NULL) {
+			log_warnx("%s: no lifetime extension", __func__);
+			return (0);
 		}
+
 		spi.spi = ntohl(sa->sadb_sa_spi);
 		spi.spi_size = 4;
 		switch (hdr->sadb_msg_satype) {
@@ -2250,12 +2255,24 @@ out:
 			return (0);
 		}
 
+		/* Only rekey if the child SA has been used. */
+		if (rekey) {
+#if defined(_OPENBSD_IPSEC_API_VERSION)
+			exttype = SADB_X_EXT_LIFETIME_LASTUSE;
+#else
+			exttype = SADB_EXT_LIFETIME_CURRENT;
+#endif
+			sa_ctime = pfkey_find_ext(data, len, exttype);
+			if (sa_ctime != NULL &&
+			    sa_ctime->sadb_lifetime_usetime == 0)
+				rekey = 0;
+		}
+
 		log_debug("%s: SA %s is expired, pending %s", __func__,
 		    print_spi(spi.spi, spi.spi_size),
-		    sa_ltime->sadb_lifetime_exttype == SADB_EXT_LIFETIME_SOFT ?
-		    "rekeying" : "deletion");
+		    rekey ? "rekeying" : "deletion");
 
-		if (sa_ltime->sadb_lifetime_exttype == SADB_EXT_LIFETIME_SOFT)
+		if (rekey)
 			ret = ikev2_rekey_sa(env, &spi);
 		else
 			ret = ikev2_drop_sa(env, &spi);

@@ -3414,25 +3414,66 @@ void
 ikev2_ike_sa_alive(struct iked *env, void *arg)
 {
 	struct iked_sa			*sa = arg;
-	struct iked_childsa		*csa = NULL;
+	struct iked_childsa		*csa, *nextcsa;
 	struct timeval			 tv;
-	uint64_t			 last_used, diff;
+	uint64_t			 last_used;
+	int64_t				 diff;
 	int				 foundin = 0, foundout = 0;
 
+	log_debug("%s: IKE SA ispi %s rspi %s -- state %s", __func__,
+	    print_spi(sa->sa_hdr.sh_ispi, 8),
+	    print_spi(sa->sa_hdr.sh_rspi, 8),
+	    print_map(sa->sa_state, ikev2_state_map));
+
+	gettimeofday(&tv, NULL);
+	diff = tv.tv_sec - sa->sa_last_used;
+	if (diff < IKED_IKE_SA_ALIVE_TIMEOUT) {
+		log_debug("%s: IKE SA used %jd seconds ago", __func__,
+		    (intmax_t)diff);
+		goto done;
+	}
+
+	if (TAILQ_EMPTY(&sa->sa_childsas)) {
+		log_debug("%s: IKE SA without child SAs; deleting", __func__);
+		ikev2_ikesa_delete(env, sa, sa->sa_hdr.sh_initiator);
+		/* Timer now used for delete! */
+		return;
+	}
+
 	/* check for incoming traffic on any child SA */
-	TAILQ_FOREACH(csa, &sa->sa_childsas, csa_entry) {
+	for (csa = TAILQ_FIRST(&sa->sa_childsas); csa != NULL; csa = nextcsa) {
+		nextcsa = TAILQ_NEXT(csa, csa_entry);
+
+		log_debug("%s: Child SA spi %s -- loaded %d rekey %d",
+		    __func__, print_spi(csa->csa_spi.spi, 4),
+		    csa->csa_loaded, csa->csa_rekey);
+
 		if (!csa->csa_loaded ||
 		    csa->csa_saproto == IKEV2_SAPROTO_IPCOMP)
 			continue;
-		if (pfkey_sa_last_used(env->sc_pfkey, csa, &last_used) != 0)
+
+		if (pfkey_sa_last_used(env->sc_pfkey, csa, &last_used) != 0) {
+			if (errno != ENOENT)
+				continue;
+
+			/* Child SA unbeknownst to kernel -- delete. */
+			RB_REMOVE(iked_activesas, &env->sc_activesas, csa);
+			TAILQ_REMOVE(&sa->sa_childsas, csa, csa_entry);
+			childsa_free(csa);
 			continue;
-		gettimeofday(&tv, NULL);
-		diff = (uint32_t)(tv.tv_sec - last_used);
-		log_debug("%s: %s CHILD SA spi %s last used %llu second(s) ago",
+		}
+
+		/* Can be negative... */
+		diff = tv.tv_sec - last_used;
+		if (diff < 0)
+			diff = 0;
+
+		log_debug("%s: %s CHILD SA spi %s last used %ju second(s) ago",
 		    __func__,
 		    csa->csa_dir == IPSP_DIRECTION_IN ? "incoming" : "outgoing",
 		    print_spi(csa->csa_spi.spi, csa->csa_spi.spi_size),
-		    (unsigned long long)diff);
+		    (uintmax_t)diff);
+
 		if (diff < IKED_IKE_SA_ALIVE_TIMEOUT) {
 			if (csa->csa_dir == IPSP_DIRECTION_IN)
 				foundin = 1;
@@ -3449,6 +3490,7 @@ ikev2_ike_sa_alive(struct iked *env, void *arg)
 		sa->sa_stateflags |= IKED_REQ_INF;
 	}
 
+ done:
 	/* re-register */
 	timer_add(env, &sa->sa_timer, IKED_IKE_SA_ALIVE_TIMEOUT);
 }
