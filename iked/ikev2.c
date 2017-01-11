@@ -3424,13 +3424,9 @@ ikev2_ike_sa_alive(struct iked *env, void *arg)
 		if (!csa->csa_loaded ||
 		    csa->csa_saproto == IKEV2_SAPROTO_IPCOMP)
 			continue;
-		gettimeofday(&tv, NULL);
-#if defined(_OPENBSD_IPSEC_API_VERSION)
 		if (pfkey_sa_last_used(env->sc_pfkey, csa, &last_used) != 0)
 			continue;
-#else
-		last_used = sa->sa_last_used;
-#endif
+		gettimeofday(&tv, NULL);
 		diff = (uint32_t)(tv.tv_sec - last_used);
 		log_debug("%s: %s CHILD SA spi %s last used %llu second(s) ago",
 		    __func__,
@@ -3438,12 +3434,10 @@ ikev2_ike_sa_alive(struct iked *env, void *arg)
 		    print_spi(csa->csa_spi.spi, csa->csa_spi.spi_size),
 		    (unsigned long long)diff);
 		if (diff < IKED_IKE_SA_ALIVE_TIMEOUT) {
-			if (csa->csa_dir == IPSP_DIRECTION_IN) {
+			if (csa->csa_dir == IPSP_DIRECTION_IN)
 				foundin = 1;
-				break;
-			} else {
+			else
 				foundout = 1;
-			}
 		}
 	}
 

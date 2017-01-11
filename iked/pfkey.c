@@ -455,7 +455,7 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
 	if (sa_dstid)
 		free(sa_dstid);
 
-#else /* !_OPENBSD_IPSEC_API_VERSION */
+#else /* _OPENBSD_IPSEC_API_VERSION */
 
 	struct sadb_msg		 smsg;
 	struct sadb_address	 sa_src, sa_dst;
@@ -657,7 +657,7 @@ pfkey_flow(int sd, uint8_t satype, uint8_t action, struct iked_flow *flow)
  done:
 	free(reply);
 
-#endif /* !_OPENBSD_IPSEC_API_VERSION */
+#endif /* _OPENBSD_IPSEC_API_VERSION */
 
 	return (ret);
 }
@@ -1058,7 +1058,6 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 	return (pfkey_write(sd, &smsg, iov, iov_cnt, NULL, NULL));
 }
 
-#if defined(_OPENBSD_IPSEC_API_VERSION)
 int
 pfkey_sa_last_used(int sd, struct iked_childsa *sa, uint64_t *last_used)
 {
@@ -1070,7 +1069,7 @@ pfkey_sa_last_used(int sd, struct iked_childsa *sa, uint64_t *last_used)
 	struct iovec		 iov[IOV_CNT];
 	uint8_t			*data;
 	ssize_t			 n;
-	int			 iov_cnt, ret = -1;
+	int			 exttype, iov_cnt, ret = -1;
 	uint8_t			 satype;
 
 	*last_used = 0;
@@ -1156,21 +1155,26 @@ pfkey_sa_last_used(int sd, struct iked_childsa *sa, uint64_t *last_used)
 		log_warn("%s: message", __func__);
 		goto done;
 	}
-	if ((sa_life = pfkey_find_ext(data, n, SADB_X_EXT_LIFETIME_LASTUSE))
-	    == NULL) {
+
+#if defined(_OPENBSD_IPSEC_API_VERSION)
+	exttype = SADB_X_EXT_LIFETIME_LASTUSE;
+#else
+	exttype = SADB_EXT_LIFETIME_CURRENT;
+#endif
+
+	if ((sa_life = pfkey_find_ext(data, n, exttype)) == NULL) {
 		/* has never been used */
 		ret = -1;
 		goto done;
 	}
 	*last_used = sa_life->sadb_lifetime_usetime;
-	log_debug("%s: last_used %llu", __func__, *last_used);
+	log_debug("%s: last_used %ju", __func__, (uintmax_t)*last_used);
 
 done:
 	explicit_bzero(data, n);
 	free(data);
 	return (ret);
 }
-#endif
 
 int
 pfkey_sa_getspi(int sd, uint8_t satype, struct iked_childsa *sa,
