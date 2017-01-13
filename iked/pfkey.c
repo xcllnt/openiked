@@ -2315,9 +2315,9 @@ out:
 				log_debug("%s: SA no recently used:"
 				    " created %ju, last used %jd, limit %ju",
 				    __func__,
-				    sa_ctime->sadb_lifetime_addtime,
-				    sa_ctime->sadb_lifetime_usetime,
-				    sa_ltime->sadb_lifetime_addtime);
+				    (uintmax_t)sa_ctime->sadb_lifetime_addtime,
+				    (uintmax_t)sa_ctime->sadb_lifetime_usetime,
+				    (uintmax_t)sa_ltime->sadb_lifetime_addtime);
 				rekey = 0;
 			}
 		}
