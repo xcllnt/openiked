@@ -1936,6 +1936,7 @@ int
 pfkey_process(struct iked *env, struct pfkey_message *pm)
 {
 	struct iked_addr	 peer;
+	struct iked_childsa	*csa;
 	struct iked_flow	 flow;
 	struct iked_spi		 spi;
 	struct sadb_msg		 smsg;
@@ -1959,7 +1960,7 @@ pfkey_process(struct iked *env, struct pfkey_message *pm)
 #endif
 	uint8_t			*data = pm->pm_data;
 	ssize_t			 len = pm->pm_length;
-	int			 exttype, rekey;
+	int			 exttype, polflags, rekey;
 	int			 ret = 0;
 
 	if (!env || !data || !len)
@@ -1973,7 +1974,7 @@ pfkey_process(struct iked *env, struct pfkey_message *pm)
 		sa_addr = pfkey_find_ext(data, len, SADB_EXT_ADDRESS_DST);
 		if (sa_addr == NULL) {
 			log_debug("%s: no peer address", __func__);
-			return (0);
+			break;
 		}
 		speer = (struct sockaddr *)(sa_addr + 1);
 		bzero(&peer, sizeof(peer));
@@ -1982,7 +1983,7 @@ pfkey_process(struct iked *env, struct pfkey_message *pm)
 		if (socket_af((struct sockaddr *)&peer.addr,
 		    peer.addr_port) == -1) {
 			log_debug("%s: invalid address", __func__);
-			return (0);
+			break;
 		}
 		log_debug("%s: acquire request (peer %s)", __func__,
 		    print_host(speer, NULL, 0));
@@ -2020,7 +2021,7 @@ pfkey_process(struct iked *env, struct pfkey_message *pm)
 
 		if (pfkey_write(sd, &smsg, iov, iov_cnt, &reply, &rlen)) {
 			log_warnx("%s: failed to get a policy", __func__);
-			return (0);
+			break;
 		}
 
 		if ((sa_addr = pfkey_find_ext(reply, rlen,
@@ -2033,13 +2034,13 @@ pfkey_process(struct iked *env, struct pfkey_message *pm)
 		flow.flow_src.addr_port = htons(socket_getport(ssrc));
 		if ((slen = ssrc->sa_len) > sizeof(flow.flow_src.addr)) {
 			log_debug("%s: invalid src address len", __func__);
-			return (0);
+			break;
 		}
 		memcpy(&flow.flow_src.addr, ssrc, slen);
 		if (socket_af((struct sockaddr *)&flow.flow_src.addr,
 		    flow.flow_src.addr_port) == -1) {
 			log_debug("%s: invalid address", __func__);
-			return (0);
+			break;
 		}
 
 		if ((sa_addr = pfkey_find_ext(reply, rlen,
@@ -2052,13 +2053,13 @@ pfkey_process(struct iked *env, struct pfkey_message *pm)
 		flow.flow_dst.addr_port = htons(socket_getport(sdst));
 		if ((slen = sdst->sa_len) > sizeof(flow.flow_dst.addr)) {
 			log_debug("%s: invalid dst address len", __func__);
-			return (0);
+			break;
 		}
 		memcpy(&flow.flow_dst.addr, sdst, slen);
 		if (socket_af((struct sockaddr *)&flow.flow_dst.addr,
 		    flow.flow_dst.addr_port) == -1) {
 			log_debug("%s: invalid address", __func__);
-			return (0);
+			break;
 		}
 
 		if ((sa_addr = pfkey_find_ext(reply, rlen,
@@ -2130,8 +2131,9 @@ out:
 		if (errmsg)
 			log_warnx("%s: %s wasn't found", __func__, errmsg);
 		free(reply);
+		break;
 
-#elif defined(SADB_X_EXT_POLICY)
+#else	/* _OPENBSD_IPSEC_API_VERSION */
 
 		/*
 		 * The SADB_ACQUIRE message only have the local and peer
@@ -2142,7 +2144,7 @@ out:
 		sa_pol = pfkey_find_ext(data, len, SADB_X_EXT_POLICY);
 		if (sa_pol == NULL) {
 			log_debug("%s: no policy extension", __func__);
-			return (0);
+			break;
 		}
 		flow.flow_dir = sa_pol->sadb_x_policy_dir;
 
@@ -2166,14 +2168,14 @@ out:
 
 		if (pfkey_write(sd, &smsg, iov, iov_cnt, &reply, &rlen)) {
 			log_warnx("%s: failed to get a policy", __func__);
-			return (0);
+			break;
 		}
 
 		sa_addr = pfkey_find_ext(reply, rlen, SADB_EXT_ADDRESS_SRC);
 		if (sa_addr == NULL) {
 			log_debug("%s: no src in ext_policy upcall", __func__);
 			free(reply);
-			return (0);
+			break;
 		}
 		ssrc = (struct sockaddr*)(sa_addr + 1);
 		memcpy(&flow.flow_src.addr, ssrc, sizeof(*ssrc));
@@ -2183,14 +2185,14 @@ out:
 		    flow.flow_src.addr_port) == -1) {
 			log_debug("%s: invalid src address", __func__);
 			free(reply);
-			return (0);
+			break;
 		}
 
 		sa_addr = pfkey_find_ext(reply, rlen, SADB_EXT_ADDRESS_DST);
 		if (sa_addr == NULL) {
 			log_debug("%s: no dst in ext_policy upcall", __func__);
 			free(reply);
-			return (0);
+			break;
 		}
 		sdst = (struct sockaddr*)(sa_addr + 1);
 		memcpy(&flow.flow_dst.addr, sdst, sizeof(*sdst));
@@ -2200,7 +2202,7 @@ out:
 		    flow.flow_dst.addr_port) == -1) {
 			log_debug("%s: invalid dst address", __func__);
 			free(reply);
-			return (0);
+			break;
 		}
 
 		log_debug("%s: flow %s from %s/%d to %s/%d via %s", __func__,
@@ -2213,14 +2215,15 @@ out:
 		free(reply);
 
 		ret = ikev2_acquire_sa(env, &flow);
-#endif
 		break;
+
+#endif	/* _OPENBSD_IPSEC_API_VERSION */
 
 	case SADB_EXPIRE:
 		sa = pfkey_find_ext(data, len, SADB_EXT_SA);
 		if (sa == NULL) {
 			log_warnx("%s: no SA extension", __func__);
-			return (0);
+			break;
 		}
 
 		sa_ltime = pfkey_find_ext(data, len, SADB_EXT_LIFETIME_SOFT);
@@ -2232,7 +2235,7 @@ out:
 			rekey = 1;
 		if (sa_ltime == NULL) {
 			log_warnx("%s: no lifetime extension", __func__);
-			return (0);
+			break;
 		}
 
 		spi.spi = ntohl(sa->sadb_sa_spi);
@@ -2254,28 +2257,74 @@ out:
 			    print_spi(spi.spi, spi.spi_size));
 			return (0);
 		}
-
-		/* Only rekey if the child SA has been used. */
-		if (rekey) {
-#if defined(_OPENBSD_IPSEC_API_VERSION)
-			exttype = SADB_X_EXT_LIFETIME_LASTUSE;
-#else
-			exttype = SADB_EXT_LIFETIME_CURRENT;
-#endif
-			sa_ctime = pfkey_find_ext(data, len, exttype);
-			if (sa_ctime != NULL &&
-			    sa_ctime->sadb_lifetime_usetime == 0)
-				rekey = 0;
+		csa = ikev2_find_active_sa(env, &spi);
+		if (csa == NULL) {
+			log_warnx("%s: SA %s not found", __func__,
+			    print_spi(spi.spi, spi.spi_size));
+			break;
 		}
 
-		log_debug("%s: SA %s is expired, pending %s", __func__,
+		log_debug("%s: SA %s expire: %s limit reached", __func__,
 		    print_spi(spi.spi, spi.spi_size),
-		    rekey ? "rekeying" : "deletion");
+		    rekey ? "soft" : "hard");
 
+		/* Delete the child SA if the hard limit has been reached. */
+		if (!rekey) {
+			ret = ikev2_drop_sa(env, csa);
+			break;
+		}
+
+		/*
+		 * Soft limit reached: rekey, delete or do nothing.
+		 */
+
+		if (csa->csa_ikesa == NULL) {
+			/* No parent? Do nothing (wait for hard limit) */
+			break;
+		}
+
+		polflags = csa->csa_ikesa->sa_policy->pol_flags;
+		switch (polflags & IKED_POLICY_MODE_MASK) {
+		case IKED_POLICY_MODE_PASSIVE:
+			/* Do nothing (wait for hard limit) */
+			return (0);
+		case IKED_POLICY_MODE_ACTIVE:
+			/* Rekey */
+			ret = ikev2_rekey_sa(env, csa);
+			return (ret);
+		}
+
+		/*
+		 * Lazy policy. Rekey only when SA has been used recently.
+		 * Delete otherwise.
+		 */
+
+#if defined(_OPENBSD_IPSEC_API_VERSION)
+		exttype = SADB_X_EXT_LIFETIME_LASTUSE;
+#else
+		exttype = SADB_EXT_LIFETIME_CURRENT;
+#endif
+		sa_ctime = pfkey_find_ext(data, len, exttype);
+		if (sa_ctime != NULL) {
+			uint64_t last;
+
+			last = sa_ctime->sadb_lifetime_usetime;
+			if (last > 0)
+				last -= sa_ctime->sadb_lifetime_addtime;
+			if (last < sa_ltime->sadb_lifetime_addtime / 2) {
+				log_debug("%s: SA no recently used:"
+				    " created %ju, last used %jd, limit %ju",
+				    __func__,
+				    sa_ctime->sadb_lifetime_addtime,
+				    sa_ctime->sadb_lifetime_usetime,
+				    sa_ltime->sadb_lifetime_addtime);
+				rekey = 0;
+			}
+		}
 		if (rekey)
-			ret = ikev2_rekey_sa(env, &spi);
+			ret = ikev2_rekey_sa(env, csa);
 		else
-			ret = ikev2_drop_sa(env, &spi);
+			ret = ikev2_drop_sa(env, csa);
 		break;
 	}
 	return (ret);

@@ -5062,17 +5062,24 @@ ikev2_disable_rekeying(struct iked *env, struct iked_sa *sa)
 	(void)ikev2_childsa_delete(env, sa, 0, 0, NULL, 1);
 }
 
-/* return 0 if processed, -1 if busy */
-int
-ikev2_rekey_sa(struct iked *env, struct iked_spi *rekey)
+struct iked_childsa *
+ikev2_find_active_sa(struct iked *env, struct iked_spi *spi)
 {
 	struct iked_childsa		*csa, key;
+
+	key.csa_spi = *spi;
+	csa = RB_FIND(iked_activesas, &env->sc_activesas, &key);
+	return (csa);
+}
+
+/* return 0 if processed, -1 if busy */
+int
+ikev2_rekey_sa(struct iked *env, struct iked_childsa *csa)
+{
+	struct iked_spi			spi;
 	struct iked_sa			*sa;
 
-	key.csa_spi = *rekey;
-	csa = RB_FIND(iked_activesas, &env->sc_activesas, &key);
-	if (!csa)
-		return (0);
+	spi = csa->csa_spi;
 
 	if (csa->csa_rekey)	/* See if it's already taken care of */
 		return (0);
@@ -5080,19 +5087,21 @@ ikev2_rekey_sa(struct iked *env, struct iked_spi *rekey)
 		return (0);
 	if ((sa = csa->csa_ikesa) == NULL) {
 		log_warnx("%s: SA %s doesn't have a parent SA", __func__,
-		    print_spi(rekey->spi, rekey->spi_size));
+		    print_spi(spi.spi, spi.spi_size));
 		return (0);
 	}
 	if (!sa_stateok(sa, IKEV2_STATE_ESTABLISHED)) {
 		log_warnx("%s: SA %s is not established", __func__,
-		    print_spi(rekey->spi, rekey->spi_size));
+		    print_spi(spi.spi, spi.spi_size));
 		return (0);
 	}
+
 	if (sa->sa_stateflags & IKED_REQ_CHILDSA)
 		return (-1);	/* busy, retry later */
+
 	if (csa->csa_allocated)	/* Peer SPI died first, get the local one */
-		rekey->spi = csa->csa_peerspi;
-	if (ikev2_send_create_child_sa(env, sa, rekey, rekey->spi_protoid))
+		spi.spi = csa->csa_peerspi;
+	if (ikev2_send_create_child_sa(env, sa, &spi, spi.spi_protoid))
 		log_warnx("%s: failed to initiate a CREATE_CHILD_SA exchange",
 		    __func__);
 	return (0);
@@ -5100,18 +5109,12 @@ ikev2_rekey_sa(struct iked *env, struct iked_spi *rekey)
 
 /* return 0 if processed, -1 if busy */
 int
-ikev2_drop_sa(struct iked *env, struct iked_spi *drop)
+ikev2_drop_sa(struct iked *env, struct iked_childsa *csa)
 {
 	struct ibuf			*buf = NULL;
-	struct iked_childsa		*csa, key;
 	struct iked_sa			*sa;
 	struct ikev2_delete		*del;
 	uint32_t			 spi32;
-
-	key.csa_spi = *drop;
-	csa = RB_FIND(iked_activesas, &env->sc_activesas, &key);
-	if (!csa || csa->csa_rekey)
-		return (0);
 
 	sa = csa->csa_ikesa;
 	if (sa && (sa->sa_stateflags & IKED_REQ_CHILDSA))
@@ -5136,18 +5139,13 @@ ikev2_drop_sa(struct iked *env, struct iked_spi *drop)
 	else
 		spi32 = htobe32(csa->csa_peerspi);
 
-	if (ikev2_childsa_delete(env, sa, csa->csa_saproto,
-	    csa->csa_peerspi, NULL, 0))
-		log_debug("%s: failed to delete CHILD SA %s", __func__,
-		    print_spi(csa->csa_peerspi, drop->spi_size));
-
 	/* Send PAYLOAD_DELETE */
 
 	if ((buf = ibuf_static()) == NULL)
 		return (0);
 	if ((del = ibuf_advance(buf, sizeof(*del))) == NULL)
 		goto done;
-	del->del_protoid = drop->spi_protoid;
+	del->del_protoid = csa->csa_spi.spi_protoid;
 	del->del_spisize = 4;
 	del->del_nspi = htobe16(1);
 	if (ibuf_add(buf, &spi32, sizeof(spi32)))
@@ -5158,6 +5156,11 @@ ikev2_drop_sa(struct iked *env, struct iked_spi *drop)
 		goto done;
 
 	sa->sa_stateflags |= IKED_REQ_INF;
+
+	if (ikev2_childsa_delete(env, sa, csa->csa_saproto,
+	    csa->csa_peerspi, NULL, 0))
+		log_debug("%s: failed to delete CHILD SA %s", __func__,
+		    print_spi(csa->csa_peerspi, csa->csa_spi.spi_size));
 
 done:
 	ibuf_release(buf);

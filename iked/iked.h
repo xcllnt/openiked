@@ -794,8 +794,10 @@ int	 ikev2_next_payload(struct ikev2_payload *, size_t,
 	    uint8_t);
 int	 ikev2_acquire_sa(struct iked *, struct iked_flow *);
 void	 ikev2_disable_rekeying(struct iked *, struct iked_sa *);
-int	 ikev2_rekey_sa(struct iked *, struct iked_spi *);
-int	 ikev2_drop_sa(struct iked *, struct iked_spi *);
+struct iked_childsa *
+	 ikev2_find_active_sa(struct iked *, struct iked_spi *);
+int	 ikev2_rekey_sa(struct iked *, struct iked_childsa *);
+int	 ikev2_drop_sa(struct iked *, struct iked_childsa *);
 int	 ikev2_print_id(struct iked_id *, char *, size_t);
 
 /* ikev2_msg.c */
