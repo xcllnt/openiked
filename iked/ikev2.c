@@ -5120,8 +5120,6 @@ ikev2_drop_sa(struct iked *env, struct iked_childsa *csa)
 	if (sa && (sa->sa_stateflags & IKED_REQ_CHILDSA))
 		return (-1);	/* busy, retry later */
 
-	RB_REMOVE(iked_activesas, &env->sc_activesas, csa);
-	csa->csa_loaded = 0;
 	csa->csa_rekey = 1;	/* prevent re-loading */
 	if (sa == NULL) {
 		log_debug("%s: failed to find a parent SA", __func__);
