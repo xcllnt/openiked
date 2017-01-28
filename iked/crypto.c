@@ -26,7 +26,6 @@
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <event.h>
 
 #include <openssl/hmac.h>
 #include <openssl/evp.h>
