@@ -1,0 +1,23 @@
+This version of OpenIKED is derived from the openiked.org version,
+which is itself a port of OpenBSD's iked to Darwin/OS X and other
+operating systems.  This version has grown features and improvements
+not found in the original version.
+
+iked is a lean Internet Key Exchange (IKEv2) daemon which performs
+mutual authentication and which establishes and maintains IPsec VPN
+flows and security associations (SAs) between the two peers.  The
+IKEv2 protocol is defined in RFC 5996, which combines and updates the
+previous standards: ISAKMP/Oakley (RFC 2408), IKE (RFC 2409), and the
+Internet DOI (RFC 2407).  iked only supports the IKEv2 protocol;
+support for ISAKMP/Oakley and IKEv1 is provided by OpenBSD's
+isakmpd(8) or other implementations on non-OpenBSD platforms.
+
+iked supports mutual authentication using RSA public keys and X.509
+certificates, it also support responder/server-side authentication of
+clients using the EAP-MSCHAPv2 protocol over IKEv2.  It interconnects
+with other IKEv2 implementations like the native IKEv2 implementation
+of Windows 7 or newer (aka Agile VPN) or strongSwan.
+
+* http://www.openbsd.org/cgi-bin/cvsweb/src/sbin/iked/
+* http://www.openbsd.org/cgi-bin/cvsweb/src/usr.sbin/ikectl/
+* See also: http://www.openiked.org/
