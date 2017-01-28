@@ -3,6 +3,7 @@
 /*
  * Copyright (c) 2010-2013 Reyk Floeter <reyk@openbsd.org>
  * Copyright (c) 2014 Hans-Joerg Hoexer
+ * Copyright (c) 2016 Marcel Moolenaar <marcel@brkt.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -16,7 +17,6 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-
 
 #include <sys/socket.h>
 #include <sys/wait.h>
@@ -844,17 +844,22 @@ ikev2_pld_cert(struct iked *env, struct ikev2_payload *pld,
 
 	certid = &msg->msg_parent->msg_cert;
 	if (certid->id_type) {
-		log_debug("%s: duplicate cert payload", __func__);
-		return (-1);
+		if (cert.cert_type != certid->id_type) {
+			log_debug("%s: duplicate cert payload", __func__);
+			return (-1);
+		}
+		if (ibuf_add(certid->id_buf, buf, len) != 0) {
+			log_debug("%s: failed to build cert chain", __func__);
+			return (-1);
+		}
+	} else {
+		if ((certid->id_buf = ibuf_new(buf, len)) == NULL) {
+			log_debug("%s: failed to save cert", __func__);
+			return (-1);
+		}
+		certid->id_type = cert.cert_type;
+		certid->id_offset = 0;
 	}
-
-	if ((certid->id_buf = ibuf_new(buf, len)) == NULL) {
-		log_debug("%s: failed to save cert", __func__);
-		return (-1);
-	}
-	certid->id_type = cert.cert_type;
-	certid->id_offset = 0;
-
 	return (0);
 }
 
@@ -1170,10 +1175,11 @@ ikev2_pld_notify(struct iked *env, struct ikev2_payload *pld,
 			msg->msg_sa = NULL;
 			return (-1);
 		}
+		group_free(msg->msg_policy->pol_peerdh);
 		memcpy(&group, buf, len);
 		group = betoh16(group);
-		if ((msg->msg_policy->pol_peerdh = group_get(group))
-		    == NULL) {
+		msg->msg_policy->pol_peerdh = group_get(group);
+		if (msg->msg_policy->pol_peerdh == NULL) {
 			log_debug("%s: unable to select DH group %d", __func__,
 			    group);
 			return (-1);
@@ -1186,8 +1192,9 @@ ikev2_pld_notify(struct iked *env, struct ikev2_payload *pld,
 		/*
 		 * XXX should also happen for PFS so we have to check state.
 		 */
+		msg->msg_policy->pol_flags |= IKED_POLICY_RETRY;
 		timer_set(env, &env->sc_inittmr, ikev2_init_ike_sa, NULL);
-		timer_add(env, &env->sc_inittmr, IKED_INITIATOR_INITIAL);
+		timer_add(env, &env->sc_inittmr, IKED_INITIATOR_RETRY);
 		break;
 	case IKEV2_N_NO_ADDITIONAL_SAS:
 		if (!msg->msg_e) {

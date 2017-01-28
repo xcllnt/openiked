@@ -54,7 +54,10 @@ enum actions {
 	CA_KEY_INSTALL,
 	CA_KEY_IMPORT,
 	SHOW_CA,
-	SHOW_CA_CERTIFICATES
+	SHOW_CA_CERTIFICATES,
+	CA_SUBCA,
+	CA_SUBCA_CREATE,
+	CA_SUBCA_REVOKE,
 };
 
 struct parse_result {
@@ -62,6 +65,7 @@ struct parse_result {
 	struct imsgbuf	*ibuf;
 	char		*path;
 	char		*caname;
+	char		*subcaname;
 	char		*pass;
 	char		*host;
 	char		*peer;
@@ -88,5 +92,7 @@ int		 ca_key_create(struct ca *, char *);
 int		 ca_key_delete(struct ca *, char *);
 int		 ca_key_install(struct ca *, char *, char *);
 int		 ca_key_import(struct ca *, char *, char *);
+int		 ca_subca_create(struct ca *, char *, char *, int);
+int		 ca_subca_revoke(struct ca *, char *);
 
 #endif /* IKECTL_PARSER_H */

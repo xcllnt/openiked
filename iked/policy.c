@@ -1,6 +1,7 @@
 /*	$OpenBSD: policy.c,v 1.42 2016/06/01 11:16:41 patrick Exp $	*/
 
 /*
+ * Copyright (c) 2016 Marcel Moolenaar <marcel@brkt.com>
  * Copyright (c) 2010-2013 Reyk Floeter <reyk@openbsd.org>
  * Copyright (c) 2001 Daniel Hartmeier
  *
@@ -17,10 +18,8 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-
 #include <sys/socket.h>
 #include <sys/uio.h>
-
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,9 +46,7 @@ static __inline int
 void
 policy_init(struct iked *env)
 {
-	TAILQ_INIT(&env->sc_policies);
 	TAILQ_INIT(&env->sc_ocsp);
-	RB_INIT(&env->sc_users);
 	RB_INIT(&env->sc_sas);
 	RB_INIT(&env->sc_activesas);
 	RB_INIT(&env->sc_activeflows);
@@ -60,7 +57,6 @@ policy_lookup(struct iked *env, struct iked_message *msg)
 {
 	struct iked_policy	 pol;
 	char			*s, idstr[IKED_ID_SIZE];
-
 
 	if (msg->msg_sa != NULL && msg->msg_sa->sa_policy != NULL) {
 		/* Existing SA with policy */
@@ -83,11 +79,12 @@ policy_lookup(struct iked *env, struct iked_message *msg)
 	}
 
 	/* Try to find a matching policy for this message */
-	if ((msg->msg_policy = policy_test(env, &pol)) != NULL)
+	msg->msg_policy = policy_test(&env->sc_config.cfg_policies, &pol, 0);
+	if (msg->msg_policy != NULL)
 		goto found;
 
 	/* No matching policy found, try the default */
-	if ((msg->msg_policy = env->sc_defaultcon) != NULL)
+	if ((msg->msg_policy = env->sc_config.cfg_defpolicy) != NULL)
 		goto found;
 
 	/* No policy found */
@@ -97,57 +94,52 @@ policy_lookup(struct iked *env, struct iked_message *msg)
 	return (0);
 }
 
-/*
- * Check if host is in a subnet
- */
-bool
-is_in_subnet(struct sockaddr_in* host, struct sockaddr_in* subnet,
-    uint8_t subnet_mask)
+struct iked_flow *
+policy_find_flow(struct iked_policy *pol, struct iked_flow *key, int acquire)
 {
-	uint32_t host_addr = ntohl(host->sin_addr.s_addr);
-	uint32_t subnet_addr = ntohl(subnet->sin_addr.s_addr);
-	unsigned int mask = 0xFFFFFFFF << (32 - subnet_mask);
+	struct iked_flow *flow;
+	int cmp;
 
-	return ((host_addr & mask) == (subnet_addr & mask));
-}
+	flow = RB_FIND(iked_flows, &pol->pol_flows, key);
+	if (flow != NULL)
+		return (flow);
 
-bool
-isipv4_flow_and_policy(struct iked_addr fsrc, struct iked_addr fdst,
-    struct iked_addr psrc, struct iked_addr pdst)
-{
-	return (fsrc.addr.ss_family == AF_INET) &&
-	    (fdst.addr.ss_family == AF_INET) &&
-	    (psrc.addr.ss_family == AF_INET) &&
-	    (pdst.addr.ss_family == AF_INET);
-}
+	if (!acquire)
+		return (NULL);
 
-/*
- * Rules/Configuration Policies in iked.conf are subnet based.
- * This routinue checks if an incoming flow matches a preconfigured
- * policy in the config
- */
-bool
-flow_matches_policy(struct iked_addr fsrc, struct iked_addr fdst,
-    struct iked_addr psrc, struct iked_addr pdst)
-{
-	struct sockaddr_in *fsrc_addr, *psrc_addr, *fdst_addr, *pdst_addr;
-	fsrc_addr = (struct sockaddr_in*)&(fsrc.addr);
-	psrc_addr = (struct sockaddr_in*)&(psrc.addr);
-	fdst_addr = (struct sockaddr_in*)&(fdst.addr);
-	pdst_addr = (struct sockaddr_in*)&(pdst.addr);
-	return (isipv4_flow_and_policy(fsrc, fdst, psrc, pdst) &&
-	    is_in_subnet(fsrc_addr, psrc_addr, psrc.addr_mask) &&
-	    is_in_subnet(fdst_addr, pdst_addr, pdst.addr_mask));
+	/*
+	 * Acquire messages from the kernel are treated specially in
+	 * that the src and dest addresses are treated as CIDRs.  The
+	 * flow matches when the host address fall within the subnets
+	 * as given by the CIDRs.
+	 */
+	flow = RB_ROOT(&pol->pol_flows);
+	while (flow != NULL) {
+		cmp = sockaddr_cmp((void *)&key->flow_dst.addr,
+		    (void *)&flow->flow_dst.addr, flow->flow_dst.addr_mask);
+		if (!cmp)
+			cmp = sockaddr_cmp((void *)&key->flow_src.addr,
+			    (void *)&flow->flow_src.addr,
+			    flow->flow_src.addr_mask);
+		if (!cmp && key->flow_dir && flow->flow_dir)
+			cmp = (int)key->flow_dir - (int)flow->flow_dir;
+		if (!cmp)
+			return (flow);
+		flow = (cmp < 0) ? RB_LEFT(flow, flow_node) :
+		    RB_RIGHT(flow, flow_node);
+	}
+	return (NULL);
 }
 
 struct iked_policy *
-policy_test(struct iked *env, struct iked_policy *key)
+policy_test(struct iked_policies *policies, struct iked_policy *key,
+    int acquire)
 {
 	struct iked_policy	*p = NULL, *pol = NULL;
 	struct iked_flow	*flow = NULL, *flowkey;
-	u_int			 cnt = 0;
+	unsigned int		 cnt = 0;
 
-	p = TAILQ_FIRST(&env->sc_policies);
+	p = TAILQ_FIRST(policies);
 	while (p != NULL) {
 		cnt++;
 		if (p->pol_flags & IKED_POLICY_SKIP)
@@ -172,30 +164,15 @@ policy_test(struct iked *env, struct iked_policy *key)
 			 * (eg. for acquire messages from the kernel)
 			 * and find a matching flow.
 			 */
-			if (key->pol_nflows &&
-			    (flowkey = RB_MIN(iked_flows,
-			     &key->pol_flows)) != NULL) {
-				bool match = false;
-				struct iked_addr psrc, pdst, fsrc, fdst;
-				/*
-				 * Check if incoming flow from kernel upcall
-				 * matches any of the configuration policies
-				 * or rules specified in iked.conf
-				 */
-				RB_FOREACH(flow, iked_flows, &p->pol_flows) {
-					psrc = flow->flow_src;
-					pdst = flow->flow_dst;
-					fsrc = flowkey->flow_src;
-					fdst = flowkey->flow_dst;
-					if (flow_matches_policy(fsrc, fdst,
-					    psrc, pdst)) {
-						match = true;
-						break;
+			if (key->pol_nflows) {
+				flowkey = RB_MIN(iked_flows, &key->pol_flows);
+				if (flowkey != NULL) {
+					flow = policy_find_flow(p, flowkey,
+					    acquire);
+					if (flow == NULL) {
+						p = TAILQ_NEXT(p, pol_entry);
+						continue;
 					}
-				}
-				if (!match) {
-					p = TAILQ_NEXT(p, pol_entry);
-					continue;
 				}
 			}
 			/* make sure the peer ID matches */
@@ -600,7 +577,7 @@ user_lookup(struct iked *env, const char *user)
 	    sizeof(key.usr_name)) >= sizeof(key.usr_name))
 		return (NULL);
 
-	return (RB_FIND(iked_users, &env->sc_users, &key));
+	return (RB_FIND(iked_users, &env->sc_config.cfg_users, &key));
 }
 
 static __inline int

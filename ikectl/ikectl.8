@@ -147,6 +147,18 @@ Install the certificate and Certificate Revocation List (CRL) for CA
 as the currently active CA or into the specified
 .Ar path .
 .It Xo
+.Cm ca Ar name Cm subca Ar subname Cm create
+.Xc
+Create an intermediate CA or sub CA with name
+.Ar subname .
+The intermediate CA can be used everywhere a CA is needed.
+When exporting an intermediate CA, issuer certificates are exported
+as well.
+.It Xo
+.Cm ca Ar name Cm subca Ar subname Cm revoke
+.Xc
+Revoke the certificate specified by .Ar subname and generate a new CRL.
+.It Xo
 .Cm ca Ar name Cm certificate Ar host
 .Cm create
 .Op Ic server | client | ocsp

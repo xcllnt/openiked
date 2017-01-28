@@ -18,7 +18,6 @@
  */
 
 #include <sys/types.h>
-
 #include <sys/socket.h>
 #include <sys/wait.h>
 
@@ -121,11 +120,44 @@ proc_init(struct privsep *ps, struct privsep_proc *procs, unsigned int nproc)
 		ps->ps_pid[procs[i].p_id] = (*procs[i].p_init)(ps, &procs[i]);
 }
 
+int
+proc_reap(struct privsep *ps, pid_t pid, int status)
+{
+	int id;
+
+	if (pid <= 0)
+		return (0);
+	for (id = 0; id < PROC_MAX; id++) {
+		if (pid == ps->ps_pid[id])
+			break;
+	}
+	if (id == PROC_MAX)
+		return (0);
+
+	if (WIFSIGNALED(status)) {
+		if (WTERMSIG(status) != SIGKILL)
+			ps->ps_restart = 1;
+		log_warnx("%s[%d] terminated with signal %d",
+		    ps->ps_title[id], pid, WTERMSIG(status));
+	} else if (WIFEXITED(status)) {
+		if (WEXITSTATUS(status) != 0) {
+			ps->ps_restart = 1;
+			log_warnx("%s[%d] terminated with exit code %d",
+			    ps->ps_title[id], pid, WEXITSTATUS(status));
+		} else
+			log_info("%s[%d] terminated", ps->ps_title[id], pid);
+	} else
+		log_warnx("%s[%d] unexpected SIGCHLD", ps->ps_title[id], pid);
+
+	ps->ps_pid[id] = 0;
+	return (1);
+}
+
 void
 proc_kill(struct privsep *ps)
 {
-	pid_t		 pid;
-	unsigned int	 i;
+	pid_t	 pid;
+	int	 i, status;
 
 	if (privsep_process != PROC_PARENT)
 		return;
@@ -137,10 +169,10 @@ proc_kill(struct privsep *ps)
 	}
 
 	do {
-		pid = waitpid(WAIT_ANY, NULL, 0);
+		pid = waitpid(WAIT_ANY, &status, 0);
+		if (pid > 0)
+			proc_reap(ps, pid, status);
 	} while (pid != -1 || (pid == -1 && errno == EINTR));
-
-	proc_close(ps);
 }
 
 void
@@ -340,11 +372,8 @@ proc_run(struct privsep *ps, struct privsep_proc *p,
 	struct control_sock	*rcs;
 	unsigned int		 n;
 #ifndef LIBRESSL_VERSION_NUMBER
-	u_int32_t		 seed[256];
+	uint32_t		 seed[256];
 #endif
-
-	if (ps->ps_noaction)
-		return (0);
 
 	proc_open(ps, p, procs, nproc);
 

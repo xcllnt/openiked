@@ -1,6 +1,7 @@
-/*	$OpenBSD: parse.y,v 1.54 2015/12/09 21:41:49 naddy Exp $	*/
+/*	$OpenBSD: parse.y,v 1.58 2016/09/03 09:20:07 vgross Exp $	*/
 
 /*
+ * Copyright (c) 2016 Marcel Moolenaar <marcel@brkt.com>
  * Copyright (c) 2010-2013 Reyk Floeter <reyk@openbsd.org>
  * Copyright (c) 2004, 2005 Hans-Joerg Hoexer <hshoexer@openbsd.org>
  * Copyright (c) 2002, 2003, 2004 Henning Brauer <henning@openbsd.org>
@@ -24,9 +25,9 @@
 %{
 #include <sys/types.h>
 #include <sys/ioctl.h>
-
 #include <sys/socket.h>
 #include <sys/stat.h>
+
 #include <net/if.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -87,12 +88,8 @@ char		*symget(const char *);
 
 #define KEYSIZE_LIMIT	1024
 
-static struct iked	*env = NULL;
-static int		 debug = 0;
-static int		 rules = 0;
-static int		 passive = 0;
-static int		 decouple = 0;
-static char		*ocsp_url = NULL;
+static struct iked_config	 config;
+static int			 debug = 0;
 
 struct ipsec_xf {
 	const char	*name;
@@ -328,6 +325,7 @@ void			 copy_transforms(unsigned int, const struct ipsec_xf *,
 			    const struct ipsec_xf *,
 			    struct iked_transform *, size_t,
 			    unsigned int *, struct iked_transform *, size_t);
+struct iked_transform	*dup_transforms(struct iked_transform *, unsigned int);
 int			 create_ike(char *, int, uint8_t, struct ipsec_hosts *,
 			    struct ipsec_hosts *, struct ipsec_mode *,
 			    struct ipsec_mode *, uint8_t,
@@ -438,12 +436,13 @@ include		: INCLUDE STRING		{
 		}
 		;
 
-set		: SET ACTIVE	{ passive = 0; }
-		| SET PASSIVE	{ passive = 1; }
-		| SET COUPLE	{ decouple = 0; }
-		| SET DECOUPLE	{ decouple = 1; }
+set		: SET ACTIVE	{ config.cfg_passive = 0; }
+		| SET PASSIVE	{ config.cfg_passive = 1; }
+		| SET COUPLE	{ config.cfg_decoupled = 0; }
+		| SET DECOUPLE	{ config.cfg_decoupled = 1; }
 		| SET OCSP STRING		{
-			if ((ocsp_url = strdup($3)) == NULL) {
+			config.cfg_ocsp_url = strdup($3);
+			if (config.cfg_ocsp_url == NULL) {
 				yyerror("cannot set ocsp_url");
 				YYERROR;
 			}
@@ -1011,7 +1010,15 @@ string		: string STRING
 
 varset		: STRING '=' string
 		{
+			char *s = $1;
 			log_debug("%s = \"%s\"\n", $1, $3);
+			while (*s++) {
+				if (isspace((unsigned char)*s)) {
+					yyerror("macro name cannot contain "
+					    "whitespace");
+					YYERROR;
+				}
+			}
 			if (symset($1, $3, 0) == -1)
 				err(1, "cannot store variable");
 			free($1);
@@ -1465,50 +1472,46 @@ popfile(void)
 	return (EOF);
 }
 
-int
-parse_config(const char *filename, struct iked *x_env)
+struct iked_config *
+parse_config(const char *filename, unsigned int opts)
 {
 	struct sym	*sym;
 	int		 errors = 0;
 
-	env = x_env;
-	rules = 0;
+	config_init(&config);
+	if (opts & IKED_OPT_PASSIVE)
+		config.cfg_passive = 1;
 
-	if ((file = pushfile(filename, 1)) == NULL)
-		return (-1);
-
-	decouple = passive = 0;
-
-	if (env->sc_opts & IKED_OPT_PASSIVE)
-		passive = 1;
-
+	file = pushfile(filename, 1);
+	if (file == NULL)
+		return (NULL);
 	yyparse();
 	errors = file->errors;
 	popfile();
 
-	env->sc_passive = passive ? 1 : 0;
-	env->sc_decoupled = decouple ? 1 : 0;
-	env->sc_ocsp_url = ocsp_url;
-
-	if (!rules)
-		log_warnx("%s: no valid configuration rules found",
-		    filename);
-	else
-		log_debug("%s: loaded %d configuration rules",
-		    filename, rules);
+	/*
+	 * If we have errors, cleanup and return NULL
+	 */
+	if (errors) {
+		config_cleanup(&config);
+		return (NULL);
+	}
 
 	/* Free macros and check which have not been used. */
 	while ((sym = TAILQ_FIRST(&symhead))) {
 		if (!sym->used)
-			log_debug("warning: macro '%s' not "
-			    "used\n", sym->nam);
+			log_debug("warning: macro '%s' not used\n", sym->nam);
 		free(sym->nam);
 		free(sym->val);
 		TAILQ_REMOVE(&symhead, sym, entry);
 		free(sym);
 	}
 
-	return (errors ? -1 : 0);
+	log_info("%s: %u polic%s; %u user%s", filename, config.cfg_npolicies,
+	    (config.cfg_npolicies == 1) ? "y" : "ies", config.cfg_nusers,
+	    (config.cfg_nusers == 1) ? "" : "s");
+
+	return (&config);
 }
 
 int
@@ -2218,7 +2221,7 @@ print_policy(struct iked_policy *pol)
 	struct iked_proposal	*pp;
 	struct iked_transform	*xform;
 	struct iked_flow	*flow;
-	struct iked_cfg		*cfg;
+	struct iked_ikecfg	*cfg;
 	unsigned int		 i, j;
 	const struct ipsec_xf	*xfs = NULL;
 
@@ -2424,6 +2427,17 @@ copy_transforms(unsigned int type, const struct ipsec_xf *xf,
 	}
 }
 
+struct iked_transform *
+dup_transforms(struct iked_transform *xforms, unsigned int nxforms)
+{
+	struct iked_transform	*dup;
+
+	dup = malloc(nxforms * sizeof(*dup));
+	if (dup != NULL)
+		memcpy(dup, xforms, nxforms * sizeof(*dup));
+	return (dup);
+}
+
 int
 create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
     struct ipsec_hosts *peers, struct ipsec_mode *ike_sa,
@@ -2435,84 +2449,100 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 {
 	char			 idstr[IKED_ID_SIZE];
 	unsigned int		 idtype = IKEV2_ID_NONE;
-	struct ipsec_addr_wrap	*ipa, *ipb;
-	struct iked_policy	 pol;
-	struct iked_proposal	 prop[2];
+	struct ipsec_addr_wrap	*ipa, *ipb, *ippn;
+	struct iked_policy	*pol;
+	struct iked_proposal	*prop;
 	unsigned int		 j;
-	struct iked_transform	 ikexforms[64], ipsecxforms[64];
-	struct iked_flow	 flows[64];
+	struct iked_transform	 xforms[64];
+	struct iked_flow	*flow;
 	static unsigned int	 policy_id = 0;
-	struct iked_cfg		*cfg;
+	struct iked_ikecfg	*cfg;
 
-	bzero(&pol, sizeof(pol));
-	bzero(&prop, sizeof(prop));
+	if (hosts == NULL || hosts->src == NULL || hosts->dst == NULL) {
+		yyerror("no traffic selectors/flows");
+		return (-1);
+	}
+
+	pol = calloc(1, sizeof(*pol));
+	if (pol == NULL) {
+		yyerror("calloc");
+		return (-1);
+	}
+	TAILQ_INIT(&pol->pol_proposals);
+	TAILQ_INIT(&pol->pol_sapeers);
+	RB_INIT(&pol->pol_flows);
+
 	bzero(idstr, sizeof(idstr));
 
-	pol.pol_id = ++policy_id;
-	pol.pol_certreqtype = env->sc_certreqtype;
-	pol.pol_af = af;
-	pol.pol_saproto = saproto;
-	pol.pol_ipproto = ipproto;
-	pol.pol_flags = flags;
-	memcpy(&pol.pol_auth, authtype, sizeof(struct iked_auth));
+	pol->pol_id = ++policy_id;
+	pol->pol_certreqtype = IKEV2_CERT_NONE;
+	pol->pol_af = af;
+	pol->pol_saproto = saproto;
+	pol->pol_ipproto = ipproto;
+	pol->pol_flags = flags;
+	memcpy(&pol->pol_auth, authtype, sizeof(struct iked_auth));
 
 	if (name != NULL) {
-		if (strlcpy(pol.pol_name, name,
-		    sizeof(pol.pol_name)) >= sizeof(pol.pol_name)) {
+		if (strlcpy(pol->pol_name, name, sizeof(pol->pol_name))
+		    >= sizeof(pol->pol_name)) {
 			yyerror("name too long");
-			return (-1);
+			goto fail;
 		}
 	} else {
-		snprintf(pol.pol_name, sizeof(pol.pol_name),
+		snprintf(pol->pol_name, sizeof(pol->pol_name),
 		    "policy%d", policy_id);
 	}
 
 	if (srcid) {
-		pol.pol_localid.id_type = get_id_type(srcid);
-		pol.pol_localid.id_length = strlen(srcid);
-		if (strlcpy((char *)pol.pol_localid.id_data,
+		pol->pol_localid.id_type = get_id_type(srcid);
+		pol->pol_localid.id_length = strlen(srcid);
+		if (strlcpy((char *)pol->pol_localid.id_data,
 		    srcid, IKED_ID_SIZE) >= IKED_ID_SIZE) {
 			yyerror("srcid too long");
-			return (-1);
+			goto fail;
 		}
 	}
 	if (dstid) {
-		pol.pol_peerid.id_type = get_id_type(dstid);
-		pol.pol_peerid.id_length = strlen(dstid);
-		if (strlcpy((char *)pol.pol_peerid.id_data,
+		pol->pol_peerid.id_type = get_id_type(dstid);
+		pol->pol_peerid.id_length = strlen(dstid);
+		if (strlcpy((char *)pol->pol_peerid.id_data,
 		    dstid, IKED_ID_SIZE) >= IKED_ID_SIZE) {
 			yyerror("dstid too long");
-			return (-1);
+			goto fail;
 		}
 	}
 
 	if (filter != NULL) {
 		if (filter->tag)
-			strlcpy(pol.pol_tag, filter->tag, sizeof(pol.pol_tag));
-		pol.pol_tap = filter->tap;
+			strlcpy(pol->pol_tag, filter->tag,
+			    sizeof(pol->pol_tag));
+		pol->pol_tap = filter->tap;
 	}
 
 	if (peers == NULL) {
-		if ((pol.pol_flags & IKED_POLICY_MODE_MASK) ==
+		if ((pol->pol_flags & IKED_POLICY_MODE_MASK) ==
 		    IKED_POLICY_MODE_ACTIVE) {
 			yyerror("active mode requires peer specification");
-			return (-1);
+			goto fail;
 		}
-		pol.pol_flags |= IKED_POLICY_DEFAULT|IKED_POLICY_SKIP;
+		pol->pol_flags |= IKED_POLICY_DEFAULT|IKED_POLICY_SKIP;
 	}
 
 	if (peers && peers->src && peers->dst &&
 	    (peers->src->address.ss_family != AF_UNSPEC) &&
 	    (peers->dst->address.ss_family != AF_UNSPEC) &&
-	    (peers->src->address.ss_family != peers->dst->address.ss_family))
-		fatalx("create_ike: peer address family mismatch");
-
-	if (peers && (pol.pol_af != AF_UNSPEC) &&
+	    (peers->src->address.ss_family != peers->dst->address.ss_family)) {
+		yyerror("peer address family mismatch");
+		goto fail;
+	}
+	if (peers && (pol->pol_af != AF_UNSPEC) &&
 	    ((peers->src && (peers->src->address.ss_family != AF_UNSPEC) &&
-	    (peers->src->address.ss_family != pol.pol_af)) ||
+	    (peers->src->address.ss_family != pol->pol_af)) ||
 	    (peers->dst && (peers->dst->address.ss_family != AF_UNSPEC) &&
-	    (peers->dst->address.ss_family != pol.pol_af))))
-		fatalx("create_ike: policy address family mismatch");
+	    (peers->dst->address.ss_family != pol->pol_af)))) {
+		yyerror("policy address family mismatch");
+		goto fail;
+	}
 
 	ipa = ipb = NULL;
 	if (peers) {
@@ -2525,7 +2555,7 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 			 * If no peers were specified, flag this policy
 			 * as being able to use transport mode.
 			 */
-			pol.pol_flags |= IKED_POLICY_TRANSPORT;
+			pol->pol_flags |= IKED_POLICY_TRANSPORT;
 			if (hosts->src && hosts->src->next == NULL)
 				ipa = hosts->src;
 			if (hosts->dst && hosts->dst->next == NULL)
@@ -2534,144 +2564,178 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 	}
 	if (ipa == NULL && ipb == NULL) {
 		yyerror("could not get local/peer specification");
-		return (-1);
+		goto fail;
 	}
-	if ((pol.pol_flags & IKED_POLICY_MODE_MASK) ==
+	if ((pol->pol_flags & IKED_POLICY_MODE_MASK) ==
 	    IKED_POLICY_MODE_ACTIVE) {
 		if (ipb == NULL || ipb->netaddress ||
 		    (ipa != NULL && ipa->netaddress)) {
 			yyerror("active mode requires local/peer address");
-			return (-1);
+			goto fail;
 		}
 	}
 	if (ipa) {
-		memcpy(&pol.pol_local.addr, &ipa->address,
+		memcpy(&pol->pol_local.addr, &ipa->address,
 		    sizeof(ipa->address));
-		pol.pol_local.addr_mask = ipa->mask;
-		pol.pol_local.addr_net = ipa->netaddress;
-		if (pol.pol_af == AF_UNSPEC)
-			pol.pol_af = ipa->address.ss_family;
+		pol->pol_local.addr_mask = ipa->mask;
+		pol->pol_local.addr_net = ipa->netaddress;
+		if (pol->pol_af == AF_UNSPEC)
+			pol->pol_af = ipa->address.ss_family;
 	}
 	if (ipb) {
-		memcpy(&pol.pol_peer.addr, &ipb->address,
+		memcpy(&pol->pol_peer.addr, &ipb->address,
 		    sizeof(ipb->address));
-		pol.pol_peer.addr_mask = ipb->mask;
-		pol.pol_peer.addr_net = ipb->netaddress;
-		if (pol.pol_af == AF_UNSPEC)
-			pol.pol_af = ipb->address.ss_family;
+		pol->pol_peer.addr_mask = ipb->mask;
+		pol->pol_peer.addr_net = ipb->netaddress;
+		if (pol->pol_af == AF_UNSPEC)
+			pol->pol_af = ipb->address.ss_family;
 	}
 
 	if (ikelifetime)
-		pol.pol_rekey = ikelifetime;
+		pol->pol_rekey = ikelifetime;
 
 	if (lt)
-		pol.pol_lifetime = *lt;
+		pol->pol_lifetime = *lt;
 	else
-		pol.pol_lifetime = deflifetime;
+		pol->pol_lifetime = deflifetime;
 
-	TAILQ_INIT(&pol.pol_proposals);
-	RB_INIT(&pol.pol_flows);
+	if (pol->pol_flags & IKED_POLICY_DEFAULT) {
+		if (config.cfg_defpolicy != NULL) {
+			yyerror("default policy already defined");
+			goto fail;
+		}
+		config.cfg_defpolicy = pol;
+	}
 
-	prop[0].prop_id = ++pol.pol_nproposals;
-	prop[0].prop_protoid = IKEV2_SAPROTO_IKE;
+	prop = calloc(1, sizeof(*prop));
+	if (prop == NULL) {
+		yyerror("calloc");
+		goto fail;
+	}
+	TAILQ_INSERT_TAIL(&pol->pol_proposals, prop, prop_entry);
+	pol->pol_nproposals++;
+	prop->prop_id = 1;
+	prop->prop_protoid = IKEV2_SAPROTO_IKE;
 	if (ike_sa == NULL || ike_sa->xfs == NULL) {
-		prop[0].prop_nxforms = ikev2_default_nike_transforms;
-		prop[0].prop_xforms = ikev2_default_ike_transforms;
+		prop->prop_nxforms = ikev2_default_nike_transforms;
+		prop->prop_xforms = ikev2_default_ike_transforms;
 	} else {
 		j = 0;
 		copy_transforms(IKEV2_XFORMTYPE_INTEGR,
 		    ike_sa->xfs->authxf, authxfs,
-		    ikexforms, nitems(ikexforms), &j,
+		    xforms, nitems(xforms), &j,
 		    ikev2_default_ike_transforms,
 		    ikev2_default_nike_transforms);
 		copy_transforms(IKEV2_XFORMTYPE_ENCR,
 		    ike_sa->xfs->encxf, ikeencxfs,
-		    ikexforms, nitems(ikexforms), &j,
+		    xforms, nitems(xforms), &j,
 		    ikev2_default_ike_transforms,
 		    ikev2_default_nike_transforms);
 		copy_transforms(IKEV2_XFORMTYPE_DH,
 		    ike_sa->xfs->groupxf, groupxfs,
-		    ikexforms, nitems(ikexforms), &j,
+		    xforms, nitems(xforms), &j,
 		    ikev2_default_ike_transforms,
 		    ikev2_default_nike_transforms);
 		copy_transforms(IKEV2_XFORMTYPE_PRF,
 		    ike_sa->xfs->prfxf, prfxfs,
-		    ikexforms, nitems(ikexforms), &j,
+		    xforms, nitems(xforms), &j,
 		    ikev2_default_ike_transforms,
 		    ikev2_default_nike_transforms);
-		prop[0].prop_nxforms = j;
-		prop[0].prop_xforms = ikexforms;
+		prop->prop_nxforms = j;
+		prop->prop_xforms = xforms;
 	}
-	TAILQ_INSERT_TAIL(&pol.pol_proposals, &prop[0], prop_entry);
+	prop->prop_xforms = dup_transforms(prop->prop_xforms,
+	    prop->prop_nxforms);
+	if (prop->prop_xforms == NULL)
+		goto fail;
 
-	prop[1].prop_id = ++pol.pol_nproposals;
-	prop[1].prop_protoid = saproto;
+	prop = calloc(1, sizeof(*prop));
+	if (prop == NULL) {
+		yyerror("calloc");
+		goto fail;
+	}
+	TAILQ_INSERT_TAIL(&pol->pol_proposals, prop, prop_entry);
+	pol->pol_nproposals++;
+	prop->prop_id = 1;
+	prop->prop_protoid = saproto;
 	if (ipsec_sa == NULL || ipsec_sa->xfs == NULL) {
-		prop[1].prop_nxforms = ikev2_default_nesp_transforms;
-		prop[1].prop_xforms = ikev2_default_esp_transforms;
+		prop->prop_nxforms = ikev2_default_nesp_transforms;
+		prop->prop_xforms = ikev2_default_esp_transforms;
 	} else {
 		j = 0;
 		if (ipsec_sa->xfs->encxf && ipsec_sa->xfs->encxf->noauth &&
 		    ipsec_sa->xfs->authxf) {
 			yyerror("authentication is implicit for %s",
 			    ipsec_sa->xfs->encxf->name);
-			return (-1);
+			goto fail;
 		}
 		if (ipsec_sa->xfs->encxf == NULL ||
 		    (ipsec_sa->xfs->encxf && !ipsec_sa->xfs->encxf->noauth))
 			copy_transforms(IKEV2_XFORMTYPE_INTEGR,
 			    ipsec_sa->xfs->authxf, authxfs,
-			    ipsecxforms, nitems(ipsecxforms), &j,
+			    xforms, nitems(xforms), &j,
 			    ikev2_default_esp_transforms,
 			    ikev2_default_nesp_transforms);
 		copy_transforms(IKEV2_XFORMTYPE_ENCR,
 		    ipsec_sa->xfs->encxf, ipsecencxfs,
-		    ipsecxforms, nitems(ipsecxforms), &j,
+		    xforms, nitems(xforms), &j,
 		    ikev2_default_esp_transforms,
 		    ikev2_default_nesp_transforms);
 		copy_transforms(IKEV2_XFORMTYPE_DH,
 		    ipsec_sa->xfs->groupxf, groupxfs,
-		    ipsecxforms, nitems(ipsecxforms), &j,
+		    xforms, nitems(xforms), &j,
 		    ikev2_default_esp_transforms,
 		    ikev2_default_nesp_transforms);
 		copy_transforms(IKEV2_XFORMTYPE_ESN,
 		    NULL, NULL,
-		    ipsecxforms, nitems(ipsecxforms), &j,
+		    xforms, nitems(xforms), &j,
 		    ikev2_default_esp_transforms,
 		    ikev2_default_nesp_transforms);
-		prop[1].prop_nxforms = j;
-		prop[1].prop_xforms = ipsecxforms;
+		prop->prop_nxforms = j;
+		prop->prop_xforms = xforms;
 	}
-	TAILQ_INSERT_TAIL(&pol.pol_proposals, &prop[1], prop_entry);
-
-	if (hosts == NULL || hosts->src == NULL || hosts->dst == NULL)
-		fatalx("create_ike: no traffic selectors/flows");
+	prop->prop_xforms = dup_transforms(prop->prop_xforms,
+	    prop->prop_nxforms);
+	if (prop->prop_xforms == NULL)
+		goto fail;
 
 	for (j = 0, ipa = hosts->src, ipb = hosts->dst; ipa && ipb;
 	    ipa = ipa->next, ipb = ipb->next, j++) {
-		memcpy(&flows[j].flow_src.addr, &ipa->address,
+		flow = calloc(1, sizeof(*flow));
+		if (flow == NULL) {
+			yyerror("calloc");
+			goto fail;
+		}
+		RB_INSERT(iked_flows, &pol->pol_flows, flow);
+		pol->pol_nflows++;
+
+		flow->flow_ipproto = ipproto;
+		memcpy(&flow->flow_src.addr, &ipa->address,
 		    sizeof(ipa->address));
-		flows[j].flow_src.addr_mask = ipa->mask;
-		flows[j].flow_src.addr_net = ipa->netaddress;
-		flows[j].flow_src.addr_port = hosts->sport;
+		flow->flow_src.addr_mask = ipa->mask;
+		flow->flow_src.addr_net = ipa->netaddress;
+		flow->flow_src.addr_port = hosts->sport;
 
-		memcpy(&flows[j].flow_dst.addr, &ipb->address,
+		memcpy(&flow->flow_dst.addr, &ipb->address,
 		    sizeof(ipb->address));
-		flows[j].flow_dst.addr_mask = ipb->mask;
-		flows[j].flow_dst.addr_net = ipb->netaddress;
-		flows[j].flow_dst.addr_port = hosts->dport;
+		flow->flow_dst.addr_mask = ipb->mask;
+		flow->flow_dst.addr_net = ipb->netaddress;
+		flow->flow_dst.addr_port = hosts->dport;
 
-		flows[j].flow_ipproto = ipproto;
-
-		pol.pol_nflows++;
-		RB_INSERT(iked_flows, &pol.pol_flows, &flows[j]);
+		ippn = ipa->srcnat;
+		if (ippn) {
+			memcpy(&flow->flow_prenat.addr, &ippn->address,
+			    sizeof(ippn->address));
+			flow->flow_prenat.addr_mask = ippn->mask;
+			flow->flow_prenat.addr_net = ippn->netaddress;
+		}
 	}
 
 	for (j = 0, ipa = ikecfg; ipa; ipa = ipa->next, j++) {
 		if (j >= IKED_CFG_MAX)
 			break;
-		cfg = &pol.pol_cfg[j];
-		pol.pol_ncfg++;
+		cfg = &pol->pol_cfg[j];
+		pol->pol_ncfg++;
 
 		cfg->cfg_action = ipa->action;
 		cfg->cfg_type = ipa->type;
@@ -2683,11 +2747,11 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 
 	if (dstid) {
 		strlcpy(idstr, dstid, sizeof(idstr));
-		idtype = pol.pol_peerid.id_type;
-	} else if (!pol.pol_peer.addr_net) {
-		print_host((struct sockaddr *)&pol.pol_peer.addr, idstr,
+		idtype = pol->pol_peerid.id_type;
+	} else if (!pol->pol_peer.addr_net) {
+		print_host((struct sockaddr *)&pol->pol_peer.addr, idstr,
 		    sizeof(idstr));
-		switch (pol.pol_peer.addr.ss_family) {
+		switch (pol->pol_peer.addr.ss_family) {
 		case AF_INET:
 			idtype = IKEV2_ID_IPV4;
 			break;
@@ -2702,34 +2766,51 @@ create_ike(char *name, int af, uint8_t ipproto, struct ipsec_hosts *hosts,
 
 	/* Check if we have a raw public key for this peer */
 	if (check_pubkey(idstr, idtype) != -1)
-		pol.pol_certreqtype = IKEV2_CERT_RSA_KEY;
+		pol->pol_certreqtype = IKEV2_CERT_RSA_KEY;
 
-	config_setpolicy(env, &pol, PROC_IKEV2);
-
-	rules++;
+	TAILQ_INSERT_TAIL(&config.cfg_policies, pol, pol_entry);
+	config.cfg_npolicies++;
 	return (0);
+
+ fail:
+	config_free_proposals(&pol->pol_proposals, 0);
+	config_free_flows(&pol->pol_flows);
+	free(pol);
+	return (-1);
 }
 
 int
 create_user(const char *user, const char *pass)
 {
-	struct iked_user	 usr;
+	struct iked_user	*usr, *old;
 
-	bzero(&usr, sizeof(usr));
+	usr = calloc(1, sizeof(*usr));
+	if (usr == NULL) {
+		yyerror("unable to allocate memory");
+		return (-1);
+	}
 
-	if (*user == '\0' || (strlcpy(usr.usr_name, user,
-	    sizeof(usr.usr_name)) >= sizeof(usr.usr_name))) {
+	if (*user == '\0' ||
+	    strlcpy(usr->usr_name, user, sizeof(usr->usr_name)) >=
+	    sizeof(usr->usr_name)) {
 		yyerror("invalid user name");
+		free(usr);
 		return (-1);
 	}
-	if (*pass == '\0' || (strlcpy(usr.usr_pass, pass,
-	    sizeof(usr.usr_pass)) >= sizeof(usr.usr_pass))) {
+	if (*pass == '\0' ||
+	    strlcpy(usr->usr_pass, pass, sizeof(usr->usr_pass)) >=
+	    sizeof(usr->usr_pass)) {
 		yyerror("invalid password");
+		free(usr);
 		return (-1);
 	}
 
-	config_setuser(env, &usr, PROC_IKEV2);
-
-	rules++;
+	old = RB_INSERT(iked_users, &config.cfg_users, usr);
+	if (old != NULL) {
+		yyerror("user already defined");
+		free(usr);
+		return (-1);
+	}
+	config.cfg_nusers++;
 	return (0);
 }

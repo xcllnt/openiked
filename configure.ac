@@ -13,8 +13,9 @@
 # ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 # OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-dnl AC_INIT([OpenIKED-portable],[5.2.0p0],[Reyk Floeter <reyk@openbsd.org>])
-AC_INIT([OpenIKED-portable], m4_esyscmd(date +%Y%m%d%H%M%S | sed -e 's/^\(.*\)$/5.2-\1/' | tr -d '\n'),[Reyk Floeter <reyk@openbsd.org>])
+AC_INIT([OpenIKED],
+        m4_esyscmd([git log --pretty=format:'(%h)' -n 1]),
+        [Marcel Moolenaar <marcel@brkt.com>])
 AC_LANG([C])
 AC_CONFIG_MACRO_DIR([m4])
 
@@ -22,7 +23,7 @@ AC_CONFIG_HEADER([config.h])
 AC_CANONICAL_HOST
 AC_C_BIGENDIAN
 
-AM_INIT_AUTOMAKE()
+AM_INIT_AUTOMAKE([subdir-objects])
 
 # Checks for programs.
 AC_PROG_CC
@@ -2231,7 +2232,7 @@ AC_RUN_IFELSE(
 	if(fd == NULL)
 		return(1);
 
-	if ((rc = fprintf(fd ,"%s\n", _EVENT_VERSION)) <0)
+	if ((rc = fprintf(fd ,"%s\n", LIBEVENT_VERSION)) <0)
 		return(1);
 
 	return(0);
@@ -2307,7 +2308,7 @@ AC_RUN_IFELSE(
 #include <stdlib.h>
 #include <string.h>
 	]], [[
-	exit(strcmp(event_get_version(), _EVENT_VERSION) == 0 ? 0 : 1);
+	exit(strcmp(event_get_version(), LIBEVENT_VERSION) == 0 ? 0 : 1);
 	]])],
 	[
 		AC_MSG_RESULT([yes])

@@ -24,6 +24,7 @@
 .Nm iked
 .Op Fl 6dnSTtv
 .Op Fl D Ar macro Ns = Ns Ar value
+.Op Fl L Ar facility
 .Op Fl f Ar file
 .Sh DESCRIPTION
 .Nm
@@ -40,7 +41,7 @@ and the Internet DOI (RFC 2407).
 only supports the IKEv2 protocol;
 support for
 ISAKMP/Oakley and IKEv1
-is provided by
+is provided by other daemons, such as
 .Xr isakmpd 8 .
 .Pp
 .Nm
@@ -70,6 +71,28 @@ on the command line.
 Overrides the definition of
 .Ar macro
 in the configuration file.
+.It Fl L Ar facility
+Write syslog messages using the specified
+.Ar facility
+instead of the default of
+.Em daemon .
+Acceptable values for
+.Ar facility
+are
+.Em auth ,
+.Em authpriv
+(if present),
+.Em daemon ,
+.Em local0 ,
+.Em local1 ,
+.Em local2 ,
+.Em local3 ,
+.Em local4 ,
+.Em local5 ,
+.Em local6 ,
+.Em local7 ,
+and
+.Em user .
 .It Fl d
 Do not daemonize and log to
 .Em stderr .
@@ -195,7 +218,9 @@ The
 program first appeared in
 .Ox 4.8 .
 .Sh AUTHORS
-The
+This version of the
 .Nm
 program was written by
-.An Reyk Floeter Aq Mt reyk@openbsd.org .
+.An Reyk Floeter Aq Mt reyk@openbsd.org ,
+with modifications and enhancements by
+.An Marcel Moolenaar Aq Mt marcel@brkt.com .

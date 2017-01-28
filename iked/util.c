@@ -1,4 +1,4 @@
-/*	$OpenBSD: util.c,v 1.30 2015/11/23 19:28:34 reyk Exp $	*/
+/*	$OpenBSD: util.c,v 1.31 2016/09/04 10:26:02 vgross Exp $	*/
 
 /*
  * Copyright (c) 2010-2013 Reyk Floeter <reyk@openbsd.org>
@@ -17,7 +17,6 @@
  */
 
 #include <sys/types.h>
-
 #include <sys/socket.h>
 #include <sys/uio.h>
 
@@ -42,7 +41,7 @@ extern int	 verbose;
 int
 socket_af(struct sockaddr *sa, in_port_t port)
 {
-	u_int salen;
+	unsigned int salen;
 
 	errno = 0;
 	switch (sa->sa_family) {
@@ -333,6 +332,63 @@ sockaddr_cmp(struct sockaddr *a, struct sockaddr *b, int prefixlen)
 }
 
 ssize_t
+sendtofrom(int s, void *buf, size_t len, int flags, struct sockaddr *to,
+    socklen_t tolen, struct sockaddr *from, socklen_t fromlen)
+{
+	struct iovec		 iov;
+	struct msghdr		 msg;
+	struct cmsghdr		*cmsg;
+	struct in6_pktinfo	*pkt6;
+#ifdef IP_SENDSRCADDR
+	struct sockaddr_in	*in;
+#endif
+	struct sockaddr_in6	*in6;
+	union {
+		struct cmsghdr	hdr;
+		char		inbuf[CMSG_SPACE(sizeof(struct in_addr))];
+		char		in6buf[CMSG_SPACE(sizeof(struct in6_pktinfo))];
+	} cmsgbuf;
+
+	bzero(&msg, sizeof(msg));
+	bzero(&cmsgbuf, sizeof(cmsgbuf));
+
+	iov.iov_base = buf;
+	iov.iov_len = len;
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_name = to;
+	msg.msg_namelen = tolen;
+
+	switch (to->sa_family) {
+#ifdef IP_SENDSRCADDR
+	case AF_INET:
+		msg.msg_control = &cmsgbuf;
+		msg.msg_controllen = sizeof(cmsgbuf.inbuf);
+		cmsg = CMSG_FIRSTHDR(&msg);
+		cmsg->cmsg_len = CMSG_LEN(sizeof(struct in_addr));
+		cmsg->cmsg_level = IPPROTO_IP;
+		cmsg->cmsg_type = IP_SENDSRCADDR;
+		in = (struct sockaddr_in *)from;
+		memcpy(CMSG_DATA(cmsg), &in->sin_addr, sizeof(struct in_addr));
+		break;
+#endif
+	case AF_INET6:
+		msg.msg_control = &cmsgbuf;
+		msg.msg_controllen = sizeof(cmsgbuf.in6buf);
+		cmsg = CMSG_FIRSTHDR(&msg);
+		cmsg->cmsg_len = CMSG_LEN(sizeof(struct in6_pktinfo));
+		cmsg->cmsg_level = IPPROTO_IPV6;
+		cmsg->cmsg_type = IPV6_PKTINFO;
+		in6 = (struct sockaddr_in6 *)from;
+		pkt6 = (struct in6_pktinfo *)CMSG_DATA(cmsg);
+		pkt6->ipi6_addr = in6->sin6_addr;
+		break;
+	}
+
+	return sendmsg(s, &msg, flags);
+}
+
+ssize_t
 recvfromto(int s, void *buf, size_t len, int flags, struct sockaddr *from,
     socklen_t *fromlen, struct sockaddr *to, socklen_t *tolen)
 {
@@ -363,8 +419,6 @@ recvfromto(int s, void *buf, size_t len, int flags, struct sockaddr *from,
 		return (-1);
 
 	*fromlen = SA_LEN(from);
-	*tolen = 0;
-
 	if (getsockname(s, to, tolen) != 0)
 		*tolen = 0;
 
@@ -474,7 +528,6 @@ void
 print_hex(uint8_t *buf, off_t offset, size_t length)
 {
 	unsigned int	 i;
-	extern int	 verbose;
 
 	if (verbose < 3 || !length)
 		return;
@@ -488,21 +541,6 @@ print_hex(uint8_t *buf, off_t offset, size_t length)
 		}
 		print_debug("%02x", buf[offset + i]);
 	}
-	print_debug("\n");
-}
-
-void
-print_hexval(uint8_t *buf, off_t offset, size_t length)
-{
-	unsigned int	 i;
-	extern int	 verbose;
-
-	if (verbose < 2 || !length)
-		return;
-
-	print_debug("0x");
-	for (i = 0; i < length; i++)
-		print_debug("%02x", buf[offset + i]);
 	print_debug("\n");
 }
 

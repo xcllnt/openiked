@@ -1,13 +1,11 @@
 sbin_PROGRAMS=	ikectl
 
 ikectl_SOURCES=	ikeca.c ikectl.c parser.c \
-		$(top_srcdir)/iked/log.c \
-		$(top_srcdir)/iked/util.c
-ikectl_CFLAGS=
+		../iked/log.c ../iked/util.c
 
 LIBCOMPAT=	$(top_builddir)/openbsd-compat/libopenbsd-compat.a
 LDADD=		$(LIBCOMPAT)
-CPPFLAGS=	-include $(top_srcdir)/openbsd-compat/includes.h \
+AM_CPPFLAGS=	-include $(top_srcdir)/openbsd-compat/includes.h \
 		-I$(top_srcdir)/openbsd-compat \
 		-I$(top_srcdir)/iked \
 		-I$(srcdir) @CPPFLAGS@ @DEFS@
@@ -34,10 +32,10 @@ install-exec-hook: $(MANPAGES)
 	$(MKDIR_P) $(DESTDIR)$(sbindir)
 	$(MKDIR_P) $(DESTDIR)$(mandir)/$(mansubdir)8
 
-	@if [ ! -f $(DESTDIR)$(SSLDIR)/ikeca.cnf ]; then \
-		$(INSTALL) -m 644 ikeca.cnf $(DESTDIR)$(SSLDIR)/ikeca.cnf; \
+	@if [ ! -f $(DESTDIR)$(sysconfdir)/ikeca.cnf ]; then \
+		$(INSTALL) -m 644 ikeca.cnf $(DESTDIR)$(sysconfdir)/ikeca.cnf; \
 	else \
-		echo "$(DESTDIR)$(SSLDIR)/ikeca.cnf already exists, install will not overwrite"; \
+		echo "$(DESTDIR)$(sysconfdir)/ikeca.cnf already exists, install will not overwrite"; \
 	fi
 
-	$(INSTALL) -m 644 ikectl.8.out		$(DESTDIR)$(mandir)/$(mansubdir)8/ikectl.8
+	$(INSTALL) -m 644 ikectl.8.out $(DESTDIR)$(mandir)/$(mansubdir)8/ikectl.8

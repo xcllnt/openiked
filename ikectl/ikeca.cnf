@@ -1,12 +1,12 @@
 # $OpenBSD: ikeca.cnf,v 1.8 2015/11/02 12:21:27 jsg Exp $
 
-CERT_C			= DE
-CERT_ST			= Lower Saxony
-CERT_L			= Hanover
-CERT_O			= OpenBSD
+CERT_C			= US
+CERT_ST			= California
+CERT_L			= Mountain View
+CERT_O			= OpenIKED
 CERT_OU			= iked
 CERT_CN			=
-CERT_EMAIL		= reyk@openbsd.org
+CERT_EMAIL		= marcel@brkt.com
 
 # default settings
 CERTPATHLEN		= 1

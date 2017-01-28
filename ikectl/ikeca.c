@@ -2,6 +2,7 @@
 
 /*
  * Copyright (c) 2010 Jonathan Gray <jsg@openbsd.org>
+ * Copyright (c) 2016 Marcel Moolenaar <marcel@brkt.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -45,7 +46,7 @@
 #endif
 #define SSL_CNF		SSLDIR "/openssl.cnf"
 #define X509_CNF	SSLDIR "/x509v3.cnf"
-#define IKECA_CNF	SSLDIR "/ikeca.cnf"
+#define IKECA_CNF	PREFIX "/etc/ikeca.cnf"
 #define KEYBASE		PREFIX "/etc/iked"
 #ifndef EXPDIR
 #define EXPDIR		PREFIX "/usr/share/iked"
@@ -60,6 +61,9 @@
 #ifndef PATH_TAR
 #define PATH_TAR	"/bin/tar"
 #endif
+
+static struct ca *ca_issuer(struct ca *);
+static int ca_revoke_internal(struct ca *, char *);
 
 struct ca {
 	char		 sslpath[PATH_MAX];
@@ -123,6 +127,15 @@ int		 expand_string(char *, size_t, const char *, const char *);
 int
 ca_delete(struct ca *ca)
 {
+	char		 path[PATH_MAX];
+	struct ca	*issuer;
+
+	issuer = ca_issuer(ca);
+	if (issuer) {
+		snprintf(path, sizeof(path), "%s/intermediates/%s",
+		    issuer->sslpath, ca->caname);
+		unlink(path);
+	}
 	return (rm_dir(ca->sslpath));
 }
 
@@ -133,7 +146,8 @@ ca_key_create(struct ca *ca, char *keyname)
 	char			 cmd[PATH_MAX * 2];
 	char			 path[PATH_MAX];
 
-	snprintf(path, sizeof(path), "%s/private/%s.key", ca->sslpath, keyname);
+	snprintf(path, sizeof(path), "%s/private/%s.key", ca->sslpath,
+	    keyname);
 
 	/* don't recreate key if one is already present */
 	if (stat(path, &st) == 0) {
@@ -171,7 +185,8 @@ ca_key_delete(struct ca *ca, char *keyname)
 {
 	char			 path[PATH_MAX];
 
-	snprintf(path, sizeof(path), "%s/private/%s.key", ca->sslpath, keyname);
+	snprintf(path, sizeof(path), "%s/private/%s.key", ca->sslpath,
+	    keyname);
 	unlink(path);
 
 	return (0);
@@ -185,13 +200,16 @@ ca_delkey(struct ca *ca, char *keyname)
 	snprintf(file, sizeof(file), "%s/%s.crt", ca->sslpath, keyname);
 	unlink(file);
 
-	snprintf(file, sizeof(file), "%s/private/%s.key", ca->sslpath, keyname);
+	snprintf(file, sizeof(file), "%s/private/%s.key", ca->sslpath,
+	    keyname);
 	unlink(file);
 
-	snprintf(file, sizeof(file), "%s/private/%s.csr", ca->sslpath, keyname);
+	snprintf(file, sizeof(file), "%s/private/%s.csr", ca->sslpath,
+	    keyname);
 	unlink(file);
 
-	snprintf(file, sizeof(file), "%s/private/%s.pfx", ca->sslpath, keyname);
+	snprintf(file, sizeof(file), "%s/private/%s.pfx", ca->sslpath,
+	    keyname);
 	unlink(file);
 
 	return (0);
@@ -250,13 +268,13 @@ ca_sign(struct ca *ca, char *keyname, int type)
 	ca_setcnf(ca, keyname);
 
 	snprintf(cmd, sizeof(cmd),
-	    "%s ca -config %s -keyfile %s/private/ca.key"
-	    " -cert %s/ca.crt"
+	    "%s ca -config %s -keyfile %s/private/%s-ca.key"
+	    " -cert %s/%s-ca.crt"
 	    " -extfile %s -extensions %s -out %s/%s.crt"
 	    " -in %s/private/%s.csr"
 	    " -passin file:%s -outdir %s -batch",
-	    PATH_OPENSSL, ca->sslcnf, ca->sslpath,
-	    ca->sslpath,
+	    PATH_OPENSSL, ca->sslcnf, ca->sslpath, ca->caname,
+	    ca->sslpath, ca->caname,
 	    ca->extcnf, extensions, ca->sslpath, keyname,
 	    ca->sslpath, keyname,
 	    ca->passfile, ca->sslpath);
@@ -393,44 +411,78 @@ ca_newpass(char *passfile, char *password)
 	fclose(f);
 }
 
-int
-ca_create(struct ca *ca)
+static int
+ca_create_internal(struct ca *ca, struct ca *issuer)
 {
 	char			 cmd[PATH_MAX * 2];
+	char			 cn[PATH_MAX];
+	char			 name[PATH_MAX];
 	char			 path[PATH_MAX];
 
 	ca_clrenv();
 
-	snprintf(path, sizeof(path), "%s/private/ca.key", ca->sslpath);
+	snprintf(name, sizeof(name), "%s-ca", ca->caname);
+	snprintf(path, sizeof(path), "%s/private/%s.key", ca->sslpath, name);
 	snprintf(cmd, sizeof(cmd), "%s genrsa -aes256 -out"
-	    " %s -passout file:%s 2048", PATH_OPENSSL,
-	    path, ca->passfile);
+	    " %s -passout file:%s 2048", PATH_OPENSSL, path, ca->passfile);
 	system(cmd);
 	chmod(path, 0600);
 
-	ca_setenv("$ENV::CERT_CN", "VPN CA");
-	ca_setcnf(ca, "ca");
+	snprintf(cn, sizeof(cn), "%s %s CA", ca->caname,
+	    (issuer == ca) ? "root" : "intermediate");
+	ca_setenv("$ENV::CERT_CN", cn);
+	ca_setcnf(issuer, name);
 
-	snprintf(path, sizeof(path), "%s/private/ca.csr", ca->sslpath);
-	snprintf(cmd, sizeof(cmd), "%s req %s-new"
-	    " -key %s/private/ca.key"
-	    " -config %s -out %s -passin file:%s", PATH_OPENSSL,
-	    ca->batch, ca->sslpath, ca->sslcnf, path, ca->passfile);
+	snprintf(path, sizeof(path), "%s/private/%s.csr", issuer->sslpath,
+	    name);
+	snprintf(cmd, sizeof(cmd), "%s req %s-new -key %s/private/%s.key"
+	    " -config %s -out %s -passin file:%s", PATH_OPENSSL, ca->batch,
+	    ca->sslpath, name, issuer->sslcnf, path, ca->passfile);
 	system(cmd);
 	chmod(path, 0600);
 
-	snprintf(cmd, sizeof(cmd), "%s x509 -req -days 365"
-	    " -in %s/private/ca.csr -signkey %s/private/ca.key"
-	    " -sha256"
-	    " -extfile %s -extensions x509v3_CA -out %s/ca.crt -passin file:%s",
-	    PATH_OPENSSL, ca->sslpath, ca->sslpath, ca->extcnf, ca->sslpath,
-	    ca->passfile);
-	system(cmd);
+	if (issuer == ca) {
+		snprintf(cmd, sizeof(cmd), "%s x509 -req -days 365"
+		    " -in %s/private/%s.csr -signkey %s/private/%s.key"
+		    " -sha256 -extfile %s -extensions x509v3_CA"
+		    " -out %s/%s.crt -passin file:%s", PATH_OPENSSL,
+		    issuer->sslpath, name, ca->sslpath, name, issuer->extcnf,
+		    ca->sslpath, name, ca->passfile);
+		system(cmd);
+	} else {
+		ca_create_index(issuer);
+		ca_clrenv();
+		ca_setenv("$ENV::CERT_CN", cn);
+		ca_setenv("$ENV::CADB", issuer->index);
+		ca_setenv("$ENV::CASERIAL", issuer->serial);
+		ca_setcnf(issuer, name);
+
+		snprintf(cmd, sizeof(cmd), "%s ca -config %s -notext"
+		    " -keyfile %s/private/%s-ca.key -cert %s/%s-ca.crt"
+		    " -extfile %s -extensions x509v3_CA -out %s/%s.crt"
+		    " -in %s/private/%s.csr -passin file:%s -outdir %s"
+		    " -batch", PATH_OPENSSL, issuer->sslcnf, issuer->sslpath,
+		    issuer->caname, issuer->sslpath, issuer->caname,
+		    issuer->extcnf, ca->sslpath, name, issuer->sslpath,
+		    name, issuer->passfile, issuer->sslpath);
+		system(cmd);
+	}
+
+	ca_clrenv();
+	ca_setenv("$ENV::CERT_CN", cn);
+	ca_setcnf(issuer, name);
 
 	/* Create the CRL revocation list */
-	ca_revoke(ca, NULL);
+	ca_revoke_internal(ca, NULL);
 
 	return (0);
+}
+
+int
+ca_create(struct ca *ca)
+{
+
+	return (ca_create_internal(ca, ca));
 }
 
 int
@@ -441,33 +493,39 @@ ca_install(struct ca *ca, char *dir)
 	char		 dst[PATH_MAX];
 	char		*p = NULL;
 
-	snprintf(src, sizeof(src), "%s/ca.crt", ca->sslpath);
-	if (stat(src, &st) == -1) {
-		printf("CA '%s' does not exist\n", ca->caname);
-		return (1);
-	}
-
 	if (dir == NULL)
 		p = dir = strdup(KEYBASE);
 
 	ca_hier(dir);
 
-	snprintf(dst, sizeof(dst), "%s/ca/ca.crt", dir);
-	if (fcopy(src, dst, 0644) == 0)
-		printf("certificate for CA '%s' installed into %s\n",
-		    ca->caname, dst);
-
-	snprintf(src, sizeof(src), "%s/ca.crl", ca->sslpath);
-	if (stat(src, &st) == 0) {
-		snprintf(dst, sizeof(dst), "%s/crls/ca.crl", dir);
+	while (ca != NULL) {
+		snprintf(src, sizeof(src), "%s/%s-ca.crt", ca->sslpath,
+		    ca->caname);
+		if (stat(src, &st) == -1) {
+			printf("CA '%s' does not exist\n", ca->caname);
+			break;
+		}
+		snprintf(dst, sizeof(dst), "%s/ca/%s-ca.crt", dir,
+		    ca->caname);
 		if (fcopy(src, dst, 0644) == 0)
-			printf("CRL for CA '%s' installed to %s\n",
+			printf("certificate for CA '%s' installed into %s\n",
 			    ca->caname, dst);
+
+		snprintf(src, sizeof(src), "%s/%s-ca.crl", ca->sslpath,
+		    ca->caname);
+		if (stat(src, &st) == 0) {
+			snprintf(dst, sizeof(dst), "%s/crls/%s-ca.crl", dir,
+			    ca->caname);
+			if (fcopy(src, dst, 0644) == 0)
+				printf("CRL for CA '%s' installed to %s\n",
+				    ca->caname, dst);
+		}
+
+		ca = ca_issuer(ca);
 	}
 
 	free(p);
-
-	return (0);
+	return ((ca == NULL) ? 0 : 1);
 }
 
 int
@@ -601,6 +659,7 @@ rm_dir(char *path)
 				warn("rmdir %s", p->fts_accpath);
 			break;
 		case FTS_F:
+		case FTS_SL:
 			if (unlink(p->fts_accpath) == -1)
 				warn("unlink %s", p->fts_accpath);
 			break;
@@ -652,7 +711,7 @@ ca_export(struct ca *ca, char *keyname, char *myname, char *password)
 		if (strlcpy(oname, keyname, sizeof(oname)) >= sizeof(oname))
 			errx(1, "name too long");
 	} else {
-		strlcpy(oname, "ca", sizeof(oname));
+		snprintf(oname, sizeof(oname), "%s-ca", ca->caname);
 	}
 
 	/* colons are not valid characters in windows filenames... */
@@ -672,64 +731,39 @@ ca_export(struct ca *ca, char *keyname, char *myname, char *password)
 			errx(1, "passphrase does not match!");
 	}
 
-	if (keyname != NULL) {
-		snprintf(cmd, sizeof(cmd), "env EXPASS=%s %s pkcs12 -export"
-		    " -name %s -CAfile %s/ca.crt -inkey %s/private/%s.key"
-		    " -in %s/%s.crt -out %s/private/%s.pfx -passout env:EXPASS"
-		    " -passin file:%s", pass, PATH_OPENSSL, keyname,
-		    ca->sslpath, ca->sslpath, keyname, ca->sslpath, keyname,
-		    ca->sslpath, oname, ca->passfile);
-		system(cmd);
-	}
-
-	snprintf(cmd, sizeof(cmd), "env EXPASS=%s %s pkcs12 -export"
-	    " -caname '%s' -name '%s' -cacerts -nokeys"
-	    " -in %s/ca.crt -out %s/ca.pfx -passout env:EXPASS -passin file:%s",
-	    pass, PATH_OPENSSL, ca->caname, ca->caname, ca->sslpath,
-	    ca->sslpath, ca->passfile);
-	system(cmd);
-
 	if ((p = mkdtemp(tpl)) == NULL)
 		err(1, "could not create temp dir");
-
 	chmod(p, 0755);
 
 	for (i = 0; i < nitems(hier); i++) {
 		strlcpy(dst, p, sizeof(dst));
 		strlcat(dst, hier[i].dir, sizeof(dst));
 		if (stat(dst, &st) != 0 && errno == ENOENT &&
-		    mkdir(dst, hier[i].mode) != 0)
-			err(1, "failed to create dir %s", dst);
+		    mkdir(dst, hier[i].mode) != 0) {
+			warn("failed to create dir %s", dst);
+			goto fail;
+		}
 	}
 
 	/* create a file with the address of the peer to connect to */
 	if (myname != NULL) {
 		snprintf(dst, sizeof(dst), "%s/export/peer.txt", p);
-		if ((fd = open(dst, O_WRONLY|O_CREAT, 0644)) == -1)
-			err(1, "open %s", dst);
+		if ((fd = open(dst, O_WRONLY|O_CREAT, 0644)) == -1) {
+			warn("open %s", dst);
+			goto fail;
+		}
 		write(fd, myname, strlen(myname));
 		close(fd);
 	}
 
-	snprintf(src, sizeof(src), "%s/ca.pfx", ca->sslpath);
-	snprintf(dst, sizeof(dst), "%s/export/ca.pfx", p);
-	fcopy(src, dst, 0644);
-
-	snprintf(src, sizeof(src), "%s/ca.crt", ca->sslpath);
-	snprintf(dst, sizeof(dst), "%s/ca/ca.crt", p);
-	fcopy(src, dst, 0644);
-
-	snprintf(src, sizeof(src), "%s/ca.crl", ca->sslpath);
-	if (stat(src, &st) == 0) {
-		snprintf(dst, sizeof(dst), "%s/crls/ca.crl", p);
-		fcopy(src, dst, 0644);
-	}
-
 	if (keyname != NULL) {
-		snprintf(src, sizeof(src), "%s/private/%s.pfx", ca->sslpath,
-		    oname);
-		snprintf(dst, sizeof(dst), "%s/export/%s.pfx", p, oname);
-		fcopy(src, dst, 0644);
+		snprintf(cmd, sizeof(cmd), "env EXPASS=%s %s pkcs12 -export"
+		    " -name %s -CAfile %s/%s-ca.crt -inkey %s/private/%s.key"
+		    " -in %s/%s.crt -out %s/export/%s.pfx -passout env:EXPASS"
+		    " -passin file:%s", pass, PATH_OPENSSL, keyname,
+		    ca->sslpath, ca->caname, ca->sslpath, keyname, ca->sslpath,
+		    keyname, p, oname, ca->passfile);
+		system(cmd);
 
 		snprintf(src, sizeof(src), "%s/private/%s.key", ca->sslpath,
 		    keyname);
@@ -748,13 +782,34 @@ ca_export(struct ca *ca, char *keyname, char *myname, char *password)
 		system(cmd);
 	}
 
+	while (ca != NULL) {
+		snprintf(cmd, sizeof(cmd), "env EXPASS=%s %s pkcs12 -export"
+		    " -caname '%s' -name '%s' -cacerts -nokeys"
+		    " -in %s/%s-ca.crt -out %s/export/%s-ca.pfx"
+		    " -passout env:EXPASS -passin file:%s", pass,
+		    PATH_OPENSSL, ca->caname, ca->caname, ca->sslpath,
+		    ca->caname, p, ca->caname, ca->passfile);
+		system(cmd);
+
+		snprintf(src, sizeof(src), "%s/%s-ca.crt", ca->sslpath,
+		    ca->caname);
+		snprintf(dst, sizeof(dst), "%s/ca/%s-ca.crt", p, ca->caname);
+		fcopy(src, dst, 0644);
+
+		snprintf(src, sizeof(src), "%s/%s-ca.crl", ca->sslpath,
+		    ca->caname);
+		if (stat(src, &st) == 0) {
+			snprintf(dst, sizeof(dst), "%s/crls/%s-ca.crl", p,
+			    ca->caname);
+			fcopy(src, dst, 0644);
+		}
+
+		ca = ca_issuer(ca);
+	}
+
 	if (stat(PATH_TAR, &st) == 0) {
-		if (keyname == NULL)
-			snprintf(cmd, sizeof(cmd), "%s -zcf %s.tgz -C %s .",
-			    PATH_TAR, oname, ca->sslpath);
-		else
-			snprintf(cmd, sizeof(cmd), "%s -zcf %s.tgz -C %s .",
-			    PATH_TAR, oname, p);
+		snprintf(cmd, sizeof(cmd), "%s -zcf %s.tgz -C %s .",
+		    PATH_TAR, oname, p);
 		system(cmd);
 		snprintf(src, sizeof(src), "%s.tgz", oname);
 		if (realpath(src, dst) != NULL)
@@ -778,24 +833,31 @@ ca_export(struct ca *ca, char *keyname, char *myname, char *password)
 		}
 
 		snprintf(dst, sizeof(dst), "%s/export", p);
-		if (getcwd(src, sizeof(src)) == NULL)
-			err(1, "could not get cwd");
-
-		if (chdir(dst) == -1)
-			err(1, "could not change %s", dst);
-
+		if (getcwd(src, sizeof(src)) == NULL) {
+			warn("could not get cwd");
+			goto fail;
+		}
+		if (chdir(dst) == -1) {
+			warn("could not change %s", dst);
+			goto fail;
+		}
 		snprintf(dst, sizeof(dst), "%s/%s.zip", src, oname);
 		snprintf(cmd, sizeof(cmd), "%s -qr %s .", PATH_ZIP, dst);
 		system(cmd);
 		printf("exported files in %s\n", dst);
 
-		if (chdir(src) == -1)
-			err(1, "could not change %s", dst);
+		if (chdir(src) == -1) {
+			warn("could not change %s", dst);
+			goto fail;
+		}
 	}
 
 	rm_dir(p);
-
 	return (0);
+
+ fail:
+	rm_dir(p);
+	return (1);
 }
 
 char *
@@ -862,8 +924,8 @@ ca_create_index(struct ca *ca)
 	}
 }
 
-int
-ca_revoke(struct ca *ca, char *keyname)
+static int
+ca_revoke_internal(struct ca *ca, char *certfile)
 {
 	struct stat	 st;
 	char		 cmd[PATH_MAX * 2];
@@ -871,11 +933,9 @@ ca_revoke(struct ca *ca, char *keyname)
 	char		*pass;
 	size_t		 len;
 
-	if (keyname) {
-		snprintf(path, sizeof(path), "%s/%s.crt",
-		    ca->sslpath, keyname);
-		if (stat(path, &st) != 0) {
-			warn("Problem with certificate for '%s'", keyname);
+	if (certfile) {
+		if (stat(certfile, &st) != 0) {
+			warn("Problem with certificate '%s'", certfile);
 			return (1);
 		}
 	}
@@ -891,26 +951,27 @@ ca_revoke(struct ca *ca, char *keyname)
 	ca_setenv("$ENV::CASERIAL", ca->serial);
 	ca_setcnf(ca, "ca-revoke");
 
-	if (keyname) {
+	if (certfile) {
 		snprintf(cmd, sizeof(cmd),
-		    "%s ca %s-config %s -keyfile %s/private/ca.key"
+		    "%s ca %s-config %s -keyfile %s/private/%s-ca.key"
 		    " -key %s"
-		    " -cert %s/ca.crt"
-		    " -revoke %s/%s.crt",
+		    " -cert %s/%s-ca.crt"
+		    " -revoke %s",
 		    PATH_OPENSSL, ca->batch, ca->sslcnf,
-		    ca->sslpath, pass, ca->sslpath, ca->sslpath, keyname);
+		    ca->sslpath, ca->caname, pass, ca->sslpath, ca->caname,
+		    certfile);
 		system(cmd);
 	}
 
 	snprintf(cmd, sizeof(cmd),
-	    "%s ca %s-config %s -keyfile %s/private/ca.key"
+	    "%s ca %s-config %s -keyfile %s/private/%s-ca.key"
 	    " -key %s"
 	    " -gencrl"
-	    " -cert %s/ca.crt"
+	    " -cert %s/%s-ca.crt"
 	    " -crldays 365"
-	    " -out %s/ca.crl",
-	    PATH_OPENSSL, ca->batch, ca->sslcnf, ca->sslpath,
-	    pass, ca->sslpath, ca->sslpath);
+	    " -out %s/%s-ca.crl",
+	    PATH_OPENSSL, ca->batch, ca->sslcnf, ca->sslpath, ca->caname,
+	    pass, ca->sslpath, ca->caname, ca->sslpath, ca->caname);
 	system(cmd);
 
 	explicit_bzero(pass, len);
@@ -919,10 +980,21 @@ ca_revoke(struct ca *ca, char *keyname)
 	return (0);
 }
 
+int
+ca_revoke(struct ca *ca, char *keyname)
+{
+	char		 certfile[PATH_MAX];
+
+	snprintf(certfile, sizeof(certfile), "%s/%s.crt",
+	    ca->sslpath, keyname);
+	return (ca_revoke_internal(ca, certfile));
+}
+
 void
 ca_clrenv(void)
 {
 	int	 i;
+
 	for (i = 0; ca_env[i][0] != NULL; i++)
 		ca_env[i][1] = NULL;
 }
@@ -993,15 +1065,96 @@ ca_setup(char *caname, int create, int quiet, char *pass)
 		errx(1, "CA '%s' does not exist", caname);
 	}
 
-	strlcpy(path, ca->sslpath, sizeof(path));
-	if (mkdir(path, 0777) == -1 && errno != EEXIST)
-		err(1, "failed to create dir %s", path);
-	strlcat(path, "/private", sizeof(path));
+	if (mkdir(ca->sslpath, 0777) == -1 && errno != EEXIST)
+		err(1, "failed to create dir %s", ca->sslpath);
+	snprintf(path, sizeof(path), "%s/private", ca->sslpath);
 	if (mkdir(path, 0700) == -1 && errno != EEXIST)
+		err(1, "failed to create dir %s", path);
+	snprintf(path, sizeof(path), "%s/intermediates", ca->sslpath);
+	if (mkdir(path, 0777) == -1 && errno != EEXIST)
 		err(1, "failed to create dir %s", path);
 
 	if (create && stat(ca->passfile, &st) == -1 && errno == ENOENT)
 		ca_newpass(ca->passfile, pass);
 
 	return (ca);
+}
+
+/*
+ * Return CA object for issuing CA, or NULL otherwise.
+ */
+static struct ca *
+ca_issuer(struct ca *subca)
+{
+	struct stat	 st;
+	char		 issuer[PATH_MAX];
+	char		 sslpath[PATH_MAX];
+	struct ca	*ca;
+	char		*caname;
+
+	snprintf(issuer, sizeof(issuer), "%s/issuer", subca->sslpath);
+	if (lstat(issuer, &st) == -1)
+		return (NULL);
+	if (!S_ISLNK(st.st_mode)) {
+		printf("issuer for CA '%s' is not a symlink\n",
+		    subca->caname);
+		return (NULL);
+	}
+	memset(sslpath, 0, sizeof(sslpath));
+	if (readlink(issuer, sslpath, sizeof(sslpath)) == -1) {
+		printf("unable to read issuer symlink for CA '%s'\n",
+		    subca->caname);
+		return (NULL);
+	}
+
+	/* Create CA object */
+	ca = calloc(1, sizeof(struct ca));
+	if (ca == NULL)
+		err(1, "calloc");
+
+	strlcpy(ca->sslpath, sslpath, sizeof(ca->sslpath));
+	snprintf(ca->passfile, sizeof(ca->passfile), "%s/ikeca.passwd",
+	    sslpath);
+
+	caname = strrchr(sslpath, '/');
+	if (caname == NULL || caname[0] == '\0')
+		err(1, "strrchr");
+	ca->caname = strdup(caname + 1);
+	return (ca);
+}
+
+int
+ca_subca_create(struct ca *ca, char *caname, char *password, int quiet)
+{
+	struct ca	*subca;
+	char		 cmd[PATH_MAX * 2];
+
+	subca = ca_setup(caname, 1, quiet, password);
+
+	/* Chain CAs */
+	snprintf(cmd, sizeof(cmd), "ln -sf %s %s/issuer", ca->sslpath,
+	    subca->sslpath);
+	system(cmd);
+	snprintf(cmd, sizeof(cmd), "ln -sf %s %s/intermediates/%s",
+	    subca->sslpath, ca->sslpath, subca->caname);
+	system(cmd);
+
+	return (ca_create_internal(subca, ca));
+}
+
+int
+ca_subca_revoke(struct ca *ca, char *caname)
+{
+	char		 buf1[PATH_MAX];
+	char		 buf2[PATH_MAX];
+
+	snprintf(buf1, sizeof(buf1), "%s/intermediates/%s", ca->sslpath,
+	    caname);
+	memset(buf2, 0, sizeof(buf2));
+	if (readlink(buf1, buf2, sizeof(buf2)) == -1) {
+		printf("Intermediate symlink for CA '%s' broken\n", caname);
+		return (1);
+	}
+	snprintf(buf1, sizeof(buf1), "%s/%s-ca.crt", buf2, caname);
+	return (ca_revoke_internal(ca, buf1));
 }

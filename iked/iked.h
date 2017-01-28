@@ -1,7 +1,8 @@
-/*	$OpenBSD: iked.h,v 1.96 2016/06/01 11:16:41 patrick Exp $	*/
+/*	$OpenBSD: iked.h,v 1.98 2016/09/04 10:26:02 vgross Exp $	*/
 
 /*
  * Copyright (c) 2010-2013 Reyk Floeter <reyk@openbsd.org>
+ * Copyright (c) 2016 Marcel Moolenaar <marcel@brkt.com>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -17,7 +18,6 @@
  */
 
 #include <sys/types.h>
-
 
 #include <limits.h>
 #include <imsg.h>
@@ -139,8 +139,10 @@ struct iked_flow {
 	struct iked_addr		 flow_src;
 	struct iked_addr		 flow_dst;
 	unsigned int			 flow_dir;	/* in/out */
+	struct iked_addr		 flow_prenat;
 
-	unsigned int			 flow_loaded;	/* pfkey done */
+	/* flow_loaded must be signed! */
+	int8_t				 flow_loaded;	/* pfkey done */
 
 	uint8_t				 flow_saproto;
 	uint8_t				 flow_ipproto;
@@ -208,7 +210,7 @@ struct iked_auth {
 	uint8_t		auth_data[IKED_PSK_SIZE];
 };
 
-struct iked_cfg {
+struct iked_ikecfg {
 	uint8_t				 cfg_action;
 	uint16_t			 cfg_type;
 	union {
@@ -225,6 +227,7 @@ struct iked_lifetime {
 
 struct iked_policy {
 	unsigned int			 pol_id;
+	int				 pol_refcnt;
 	char				 pol_name[IKED_ID_SIZE];
 
 #define IKED_SKIP_FLAGS			 0
@@ -235,18 +238,18 @@ struct iked_policy {
 #define IKED_SKIP_COUNT			 5
 	struct iked_policy		*pol_skip[IKED_SKIP_COUNT];
 
-	uint8_t				 pol_flags;
-#define IKED_POLICY_MODE_MASK		 0x03
-#define IKED_POLICY_MODE_PASSIVE	 0x00
-#define IKED_POLICY_MODE_LAZY		 0x01
-#define IKED_POLICY_MODE_ACTIVE		 0x02
-#define IKED_POLICY_REFCNT		 0x04
-#define IKED_POLICY_QUICK		 0x08
-#define IKED_POLICY_SKIP		 0x10
-#define IKED_POLICY_IPCOMP		 0x20
-#define IKED_POLICY_TRANSPORT		 0x40
-#define IKED_POLICY_DEFAULT		 0x80
-	int				 pol_refcnt;
+	uint16_t			 pol_flags;
+#define IKED_POLICY_MODE_MASK		 0x003
+#define IKED_POLICY_MODE_PASSIVE	 0x000
+#define IKED_POLICY_MODE_LAZY		 0x001
+#define IKED_POLICY_MODE_ACTIVE		 0x002
+#define IKED_POLICY_REFCNT		 0x004
+#define IKED_POLICY_QUICK		 0x008
+#define IKED_POLICY_SKIP		 0x010
+#define IKED_POLICY_IPCOMP		 0x020
+#define IKED_POLICY_TRANSPORT		 0x040
+#define IKED_POLICY_DEFAULT		 0x080
+#define IKED_POLICY_RETRY		 0x100
 
 	uint8_t				 pol_certreqtype;
 
@@ -272,7 +275,7 @@ struct iked_policy {
 	struct iked_flows		 pol_flows;
 	size_t				 pol_nflows;
 
-	struct iked_cfg			 pol_cfg[IKED_CFG_MAX];
+	struct iked_ikecfg		 pol_cfg[IKED_CFG_MAX];
 	unsigned int			 pol_ncfg;
 
 	uint32_t			 pol_rekey;	/* ike SA lifetime */
@@ -436,6 +439,7 @@ struct iked_sa {
 	uint16_t			 sa_cpi_out;	/* IPcomp outgoing */
 	uint16_t			 sa_cpi_in;	/* IPcomp incoming*/
 
+	time_t				 sa_last_used;	/* Last IKE packet */
 	struct iked_timer		 sa_timer;	/* SA timeouts */
 #define IKED_IKE_SA_DELETE_TIMEOUT	 300		/* 5 minutes */
 #define IKED_IKE_SA_ALIVE_TIMEOUT	 60		/* 1 minute */
@@ -509,13 +513,6 @@ struct iked_message {
 #define IKED_RETRANSMIT_TRIES	 5		/* try 5 times */
 };
 
-struct iked_user {
-	char			 usr_name[LOGIN_NAME_MAX];
-	char			 usr_pass[IKED_PASSWORD_SIZE];
-	RB_ENTRY(iked_user)	 usr_entry;
-};
-RB_HEAD(iked_users, iked_user);
-
 struct privsep_pipes {
 	int				*pp_pipes[PROC_MAX];
 };
@@ -528,7 +525,7 @@ struct privsep {
 	const char			*ps_title[PROC_MAX];
 	pid_t				 ps_pid[PROC_MAX];
 	struct passwd			*ps_pw;
-	int				 ps_noaction;
+	int				 ps_restart;
 
 	struct control_sock		 ps_csock;
 	struct control_socks		 ps_rcsocks;
@@ -573,20 +570,34 @@ TAILQ_HEAD(iked_ocsp_requests, iked_ocsp_entry);
  * Daemon configuration
  */
 
+struct iked_user {
+	char			 usr_name[LOGIN_NAME_MAX];
+	char			 usr_pass[IKED_PASSWORD_SIZE];
+	RB_ENTRY(iked_user)	 usr_entry;
+};
+RB_HEAD(iked_users, iked_user);
+
+struct iked_config {
+	struct iked_policies		 cfg_policies;
+	struct iked_users		 cfg_users;
+	struct iked_policy		*cfg_defpolicy;
+	char				*cfg_ocsp_url;
+	unsigned int			 cfg_npolicies;
+	unsigned int			 cfg_nusers;
+	uint8_t				 cfg_passive;
+	uint8_t				 cfg_decoupled;
+};
+
 struct iked {
 	char				 sc_conffile[PATH_MAX];
+	struct iked_config		 sc_config;
+	struct iked_config		 sc_newconfig;
 
 	uint32_t			 sc_opts;
-	uint8_t				 sc_passive;
-	uint8_t				 sc_decoupled;
-
-	struct iked_policies		 sc_policies;
-	struct iked_policy		*sc_defaultcon;
 
 	struct iked_sas			 sc_sas;
 	struct iked_activesas		 sc_activesas;
 	struct iked_flows		 sc_activeflows;
-	struct iked_users		 sc_users;
 
 	void				*sc_priv;	/* per-process */
 
@@ -601,11 +612,11 @@ struct iked {
 	struct iked_timer		 sc_inittmr;
 #define IKED_INITIATOR_INITIAL		 2
 #define IKED_INITIATOR_INTERVAL		 60
+#define IKED_INITIATOR_RETRY		 1
 
 	struct privsep			 sc_ps;
 
 	struct iked_ocsp_requests	 sc_ocsp;
-	char				*sc_ocsp_url;
 
 	struct iked_addrpool		 sc_addrpool;
 	struct iked_addrpool6		 sc_addrpool6;
@@ -628,6 +639,9 @@ int	 control_listen(struct privsep *, struct control_sock *);
 void	 control_cleanup(struct control_sock *);
 
 /* config.c */
+void	 config_init(struct iked_config *);
+void	 config_cleanup(struct iked_config *);
+int	 config_apply(struct iked *, struct iked_config *);
 struct iked_policy *
 	 config_new_policy(struct iked *);
 void	 config_free_kex(struct iked_kex *);
@@ -645,7 +659,7 @@ struct iked_proposal *
 	 config_add_proposal(struct iked_proposals *, unsigned int,
 	    unsigned int);
 void	 config_free_proposals(struct iked_proposals *, unsigned int);
-void	 config_free_flows(struct iked *, struct iked_flows *);
+void	 config_free_flows(struct iked_flows *);
 void	 config_free_childsas(struct iked *, struct iked_childsas *,
 	    struct iked_spi *, struct iked_spi *);
 struct iked_transform *
@@ -657,27 +671,28 @@ int	 config_setmode(struct iked *, unsigned int);
 int	 config_getmode(struct iked *, unsigned int);
 int	 config_setreset(struct iked *, unsigned int, enum privsep_procid);
 int	 config_getreset(struct iked *, struct imsg *);
-int	 config_setpolicy(struct iked *, struct iked_policy *,
-	    enum privsep_procid);
-int	 config_getpolicy(struct iked *, struct imsg *);
 int	 config_setsocket(struct iked *, struct sockaddr_storage *, in_port_t,
 	    enum privsep_procid);
 int	 config_getsocket(struct iked *env, struct imsg *,
 	    void (*cb)(int, short, void *));
 int	 config_setpfkey(struct iked *, enum privsep_procid);
 int	 config_getpfkey(struct iked *, struct imsg *);
-int	 config_setuser(struct iked *, struct iked_user *, enum privsep_procid);
+int	 config_setapply(struct iked *, enum apply_action);
+int	 config_getapply(struct iked *, struct imsg *);
+int	 config_setpolicy(struct iked *, struct iked_policy *);
+int	 config_getpolicy(struct iked *, struct imsg *);
+int	 config_setuser(struct iked *, struct iked_user *);
 int	 config_getuser(struct iked *, struct imsg *);
-int	 config_setcompile(struct iked *, enum privsep_procid);
-int	 config_getcompile(struct iked *, struct imsg *);
-int	 config_setocsp(struct iked *);
+int	 config_setocsp(struct iked *, char *);
 int	 config_getocsp(struct iked *, struct imsg *);
 
 /* policy.c */
 void	 policy_init(struct iked *);
 int	 policy_lookup(struct iked *, struct iked_message *);
 struct iked_policy *
-	 policy_test(struct iked *, struct iked_policy *);
+	 policy_test(struct iked_policies *, struct iked_policy *, int);
+struct iked_flow *
+	 policy_find_flow(struct iked_policy *, struct iked_flow *, int);
 void	 policy_calc_skip_steps(struct iked_policies *);
 void	 policy_ref(struct iked *, struct iked_policy *);
 void	 policy_unref(struct iked *, struct iked_policy *);
@@ -780,8 +795,10 @@ int	 ikev2_next_payload(struct ikev2_payload *, size_t,
 	    uint8_t);
 int	 ikev2_acquire_sa(struct iked *, struct iked_flow *);
 void	 ikev2_disable_rekeying(struct iked *, struct iked_sa *);
-int	 ikev2_rekey_sa(struct iked *, struct iked_spi *);
-int	 ikev2_drop_sa(struct iked *, struct iked_spi *);
+struct iked_childsa *
+	 ikev2_find_active_sa(struct iked *, struct iked_spi *);
+int	 ikev2_rekey_sa(struct iked *, struct iked_childsa *);
+int	 ikev2_drop_sa(struct iked *, struct iked_childsa *);
 int	 ikev2_print_id(struct iked_id *, char *, size_t);
 
 /* ikev2_msg.c */
@@ -868,10 +885,12 @@ void	 timer_add(struct iked *, struct iked_timer *, int);
 void	 timer_del(struct iked *, struct iked_timer *);
 
 /* proc.c */
+void	 proc_close(struct privsep *);
 void	 proc_init(struct privsep *, struct privsep_proc *, unsigned int);
 void	 proc_kill(struct privsep *);
 void	 proc_listen(struct privsep *, struct privsep_proc *, size_t);
 void	 proc_dispatch(int, short event, void *);
+int	 proc_reap(struct privsep *, pid_t, int);
 pid_t	 proc_run(struct privsep *, struct privsep_proc *,
 	    struct privsep_proc *, unsigned int,
 	    void (*)(struct privsep *, struct privsep_proc *, void *), void *);
@@ -881,11 +900,11 @@ int	 imsg_compose_event(struct imsgev *, uint16_t, uint32_t,
 int	 imsg_composev_event(struct imsgev *, uint16_t, uint32_t,
 	    pid_t, int, const struct iovec *, int);
 int	 proc_compose_imsg(struct privsep *, enum privsep_procid, int,
-	    u_int16_t, u_int32_t, int, void *, u_int16_t);
+	    uint16_t, uint32_t, int, void *, uint16_t);
 int	 proc_compose(struct privsep *, enum privsep_procid,
 	    uint16_t, void *, uint16_t);
 int	 proc_composev_imsg(struct privsep *, enum privsep_procid, int,
-	    u_int16_t, u_int32_t, int, const struct iovec *, int);
+	    uint16_t, uint32_t, int, const struct iovec *, int);
 int	 proc_composev(struct privsep *, enum privsep_procid,
 	    uint16_t, const struct iovec *, int);
 int	 proc_forward_imsg(struct privsep *, struct imsg *,
@@ -903,6 +922,8 @@ int	 socket_setport(struct sockaddr *, in_port_t);
 int	 socket_getaddr(int, struct sockaddr_storage *);
 int	 socket_bypass(int, struct sockaddr *);
 int	 udp_bind(struct sockaddr *, in_port_t);
+ssize_t	 sendtofrom(int, void *, size_t, int, struct sockaddr *,
+	    socklen_t, struct sockaddr *, socklen_t);
 ssize_t	 recvfromto(int, void *, size_t, int, struct sockaddr *,
 	    socklen_t *, struct sockaddr *, socklen_t *);
 const char *
@@ -911,7 +932,6 @@ const char *
 	 print_map(unsigned int, struct iked_constmap *);
 void	 lc_string(char *);
 void	 print_hex(uint8_t *, off_t, size_t);
-void	 print_hexval(uint8_t *, off_t, size_t);
 const char *
 	 print_bits(unsigned short, unsigned char *);
 int	 sockaddr_cmp(struct sockaddr *, struct sockaddr *, int);
@@ -983,7 +1003,7 @@ int	 ocsp_validate_cert(struct iked *, struct iked_static_id *,
     void *, size_t, struct iked_sahdr, uint8_t);
 
 /* parse.y */
-int	 parse_config(const char *, struct iked *);
+struct iked_config *parse_config(const char *, unsigned int);
 void	 print_user(struct iked_user *);
 void	 print_policy(struct iked_policy *);
 size_t	 keylength_xf(unsigned int, unsigned int, unsigned int);

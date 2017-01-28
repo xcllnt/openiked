@@ -16,7 +16,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <sys/uio.h>
@@ -172,9 +171,16 @@ ca_dispatch_parent(int fd, struct privsep_proc *p, struct imsg *imsg)
 	case IMSG_CTL_RESET:
 		IMSG_SIZE_CHECK(imsg, &mode);
 		memcpy(&mode, imsg->data, sizeof(mode));
-		if (mode == RESET_ALL || mode == RESET_CA) {
+		switch (mode) {
+		case RESET_RELOAD:
+		case RESET_ALL:
+		case RESET_CA:
 			log_debug("%s: config reload", __func__);
 			ca_reset(&env->sc_ps, p, store);
+			break;
+		default:
+			/* Nothing to do */
+			break;
 		}
 		break;
 	case IMSG_OCSP_FD:
@@ -369,7 +375,7 @@ ca_getcert(struct iked *env, struct imsg *imsg)
 	switch (type) {
 	case IKEV2_CERT_X509_CERT:
 		ret = ca_validate_cert(env, &id, ptr, len);
-		if (ret == 0 && env->sc_ocsp_url) {
+		if (ret == 0 && env->sc_config.cfg_ocsp_url) {
 			ret = ocsp_validate_cert(env, &id, ptr, len, sh, type);
 			if (ret == 0)
 				return (0);
