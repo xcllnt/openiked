@@ -46,7 +46,6 @@
 #include <syslog.h>
 #include <unistd.h>
 #include <netdb.h>
-#include <event.h>
 
 #include "iked.h"
 #include "ikev2.h"

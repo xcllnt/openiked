@@ -29,7 +29,7 @@
 #include <limits.h>
 #include <fcntl.h>
 #include <ctype.h>
-#include <event.h>
+#include <stdarg.h>
 
 #include "iked.h"
 #include "ikev2.h"

@@ -28,7 +28,6 @@
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <event.h>
 
 #include "iked.h"
 #include "ikev2.h"

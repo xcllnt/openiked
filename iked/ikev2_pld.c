@@ -33,7 +33,6 @@
 #include <errno.h>
 #include <err.h>
 #include <pwd.h>
-#include <event.h>
 
 #include <openssl/sha.h>
 #include <openssl/evp.h>
