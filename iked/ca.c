@@ -29,7 +29,6 @@
 #include <errno.h>
 #include <err.h>
 #include <pwd.h>
-#include <event.h>
 
 #include <openssl/bio.h>
 #include <openssl/err.h>
