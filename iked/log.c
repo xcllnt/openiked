@@ -41,8 +41,6 @@ void	log_debug(const char *, ...)
 	    __attribute__((__format__ (printf, 1, 2)));
 void	logit(int, const char *, ...)
 	    __attribute__((__format__ (printf, 2, 3)));
-void	vlog(int, const char *, va_list)
-	    __attribute__((__format__ (printf, 2, 0)));
 __dead void fatal(const char *, ...)
 	    __attribute__((__format__ (printf, 1, 2)));
 __dead void fatalx(const char *, ...)
@@ -76,17 +74,7 @@ log_verbose(int v)
 	verbose = v;
 }
 
-void
-logit(int pri, const char *fmt, ...)
-{
-	va_list	ap;
-
-	va_start(ap, fmt);
-	vlog(pri, fmt, ap);
-	va_end(ap);
-}
-
-void
+static void
 vlog(int pri, const char *fmt, va_list ap)
 {
 	char	*nfmt;
@@ -105,6 +93,15 @@ vlog(int pri, const char *fmt, va_list ap)
 		vsyslog(pri, fmt, ap);
 }
 
+void
+logit(int pri, const char *fmt, ...)
+{
+	va_list	ap;
+
+	va_start(ap, fmt);
+	vlog(pri, fmt, ap);
+	va_end(ap);
+}
 
 void
 log_warn(const char *emsg, ...)
