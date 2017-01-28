@@ -27,7 +27,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <ctype.h>
-#include <event.h>
+
+#include <event2/event.h>
 
 #include "iked.h"
 

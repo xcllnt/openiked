@@ -30,7 +30,8 @@
 #include <errno.h>
 #include <err.h>
 #include <pwd.h>
-#include <event.h>
+
+#include <event2/event.h>
 
 #include "defines.h"
 #include "iked.h"

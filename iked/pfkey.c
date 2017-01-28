@@ -43,7 +43,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <event.h>
+
+#include <event2/event.h>
 
 #include "iked.h"
 #include "ikev2.h"

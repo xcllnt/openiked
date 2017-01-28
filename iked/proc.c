@@ -29,9 +29,12 @@
 #include <errno.h>
 #include <signal.h>
 #include <pwd.h>
-#include <event.h>
 #include <imsg.h>
+
+#include <event2/event.h>
+
 #include <openssl/rand.h>
+
 #include "iked.h"
 
 void	 proc_open(struct privsep *, struct privsep_proc *,

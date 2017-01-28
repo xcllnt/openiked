@@ -25,12 +25,13 @@
 
 #include <assert.h>
 #include <errno.h>
-#include <event.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
+
+#include <event2/event.h>
 
 #include "iked.h"
 

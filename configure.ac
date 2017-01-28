@@ -2174,7 +2174,7 @@ AC_ARG_WITH([libevent-dir],
 				# Relative paths
 				withval="`pwd`/$withval"
 				;;
-			*/libevent1|*/libevent1/|*/libevent|*/libevent/)
+			*/libevent2|*/libevent2/|*/libevent|*/libevent/)
 				AC_MSG_CHECKING([libevent header path])
 				evincludes=`echo $withval | sed s/lib/include/`
 				if test -d "$evincludes"; then
@@ -2222,7 +2222,7 @@ AC_RUN_IFELSE(
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <event.h>
+#include <event2/event.h>
 #define DATA "conftest.libeventincver"
 	]], [[
 	FILE *fd;
@@ -2256,7 +2256,7 @@ AC_RUN_IFELSE(
 	[AC_LANG_PROGRAM([[
 #include <stdio.h>
 #include <string.h>
-#include <event.h>
+#include <event2/event.h>
 #define DATA "conftest.libeventlibver"
 	]], [[
 	FILE *fd;
@@ -2300,13 +2300,9 @@ AC_ARG_WITH([libevent-header-check],
 AC_MSG_CHECKING([whether libevent's headers match the library])
 AC_RUN_IFELSE(
 	[AC_LANG_PROGRAM([[
-#if LIBEVENT_MAJOR_VERSION < 2
-#include <event.h>
-#else
-#include <event2/event.h>
-#endif
 #include <stdlib.h>
 #include <string.h>
+#include <event2/event.h>
 	]], [[
 	exit(strcmp(event_get_version(), LIBEVENT_VERSION) == 0 ? 0 : 1);
 	]])],
@@ -2333,11 +2329,7 @@ library. Check config.log for details.])
 AC_MSG_CHECKING([if programs using libevent functions will link])
 AC_LINK_IFELSE(
 	[AC_LANG_PROGRAM([[
-#if LIBEVENT_MAJOR_VERSION < 2
-#include <event.h>
-#else
 #include <event2/event.h>
-#endif
 	]], [[
 	event_base_new();
 	]])],

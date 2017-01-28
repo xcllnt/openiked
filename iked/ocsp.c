@@ -30,12 +30,12 @@
 #include <unistd.h>
 #include <netdb.h>
 
+#include <event2/event.h>
+
 #include <openssl/pem.h>
 #include <openssl/ocsp.h>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
-
-#include <event.h>
 
 #include "iked.h"
 

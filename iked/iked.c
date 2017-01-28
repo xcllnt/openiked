@@ -31,7 +31,8 @@
 #include <errno.h>
 #include <err.h>
 #include <pwd.h>
-#include <event.h>
+
+#include <event2/event.h>
 
 #include "iked.h"
 #include "ikev2.h"
@@ -364,7 +365,7 @@ parent_sig_handler(int sig, short event, void *arg)
 		log_info("%s[%d] received %s", ps->ps_title[PROC_PARENT],
 		    ps->ps_pid[PROC_PARENT],
 		    (sig == SIGTERM) ? "SIGTERM": "SIGINT");
-		event_loopexit(NULL);
+		event_base_loopexit(ps->ps_evbase, NULL);
 		break;
 	case SIGCHLD:
 		die = 0;
@@ -374,7 +375,7 @@ parent_sig_handler(int sig, short event, void *arg)
 				die |= proc_reap(ps, pid, status);
 		} while (pid > 0 || (pid == -1 && errno == EINTR));
 		if (die)
-			event_loopexit(NULL);
+			event_base_loopexit(ps->ps_evbase, NULL);
 		break;
 	default:
 		fatalx("unexpected signal");
