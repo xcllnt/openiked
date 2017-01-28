@@ -1,13 +1,11 @@
 sbin_PROGRAMS=	ikectl
 
 ikectl_SOURCES=	ikeca.c ikectl.c parser.c \
-		$(top_srcdir)/iked/log.c \
-		$(top_srcdir)/iked/util.c
-ikectl_CFLAGS=
+		../iked/log.c ../iked/util.c
 
 LIBCOMPAT=	$(top_builddir)/openbsd-compat/libopenbsd-compat.a
 LDADD=		$(LIBCOMPAT)
-CPPFLAGS=	-include $(top_srcdir)/openbsd-compat/includes.h \
+AM_CPPFLAGS=	-include $(top_srcdir)/openbsd-compat/includes.h \
 		-I$(top_srcdir)/openbsd-compat \
 		-I$(top_srcdir)/iked \
 		-I$(srcdir) @CPPFLAGS@ @DEFS@
