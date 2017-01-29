@@ -23,7 +23,6 @@
 
 #include <net/if.h>
 
-#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -89,19 +88,18 @@ control_init(struct privsep *ps, struct control_sock *cs)
 	}
 
 	sun.sun_family = AF_UNIX;
-	if (strlcpy(sun.sun_path, cs->cs_name,
-	    sizeof(sun.sun_path)) >= sizeof(sun.sun_path)) {
+	if (strlcpy(sun.sun_path, cs->cs_name, sizeof(sun.sun_path)) >=
+	    sizeof(sun.sun_path)) {
 		log_warn("%s: %s name too long", __func__, cs->cs_name);
 		close(fd);
 		return (-1);
 	}
 
-	if (unlink(cs->cs_name) == -1)
-		if (errno != ENOENT) {
-			log_warn("%s: unlink %s", __func__, cs->cs_name);
-			close(fd);
-			return (-1);
-		}
+	if (unlink(cs->cs_name) == -1 && errno != ENOENT) {
+		log_warn("%s: unlink %s", __func__, cs->cs_name);
+		close(fd);
+		return (-1);
+	}
 
 	if (cs->cs_restricted) {
 		old_umask = umask(S_IXUSR|S_IXGRP|S_IXOTH);
@@ -129,6 +127,23 @@ control_init(struct privsep *ps, struct control_sock *cs)
 	cs->cs_fd = fd;
 	cs->cs_env = env;
 
+	cs->cs_ev = event_new(ps->ps_evbase, cs->cs_fd, EV_READ,
+	    control_accept, cs);
+	if (cs->cs_ev == NULL) {
+		log_warn("%s: event_new", __func__);
+		close(fd);
+		(void)unlink(cs->cs_name);
+		return (-1);
+	}
+
+	cs->cs_evt = evtimer_new(ps->ps_evbase, control_accept, cs);
+	if (cs->cs_evt == NULL) {
+		log_warn("%s: evtimer_new", __func__);
+		close(fd);
+		(void)unlink(cs->cs_name);
+		return (-1);
+	}
+
 	return (0);
 }
 
@@ -143,15 +158,7 @@ control_listen(struct privsep *ps, struct control_sock *cs)
 		return (-1);
 	}
 
-	assert(cs->cs_ev == NULL);
-	cs->cs_ev = event_new(ps->ps_evbase, cs->cs_fd, EV_READ,
-	    control_accept, cs);
-	assert(cs->cs_ev != NULL);
 	event_add(cs->cs_ev, NULL);
-
-	assert(cs->cs_evt == NULL);
-	cs->cs_evt = evtimer_new(ps->ps_evbase, control_accept, cs);
-	assert(cs->cs_evt != NULL);
 
 	return (0);
 }
@@ -181,8 +188,9 @@ control_accept(int listenfd, short event, void *arg)
 		return;
 
 	len = sizeof(sun);
-	if ((connfd = bsd_accept4(listenfd,
-	    (struct sockaddr *)&sun, &len, SOCK_NONBLOCK)) == -1) {
+	connfd = bsd_accept4(listenfd, (struct sockaddr *)&sun, &len,
+	    SOCK_NONBLOCK);
+	if (connfd == -1) {
 		/*
 		 * Pause accept if we are out of file descriptors, or
 		 * libevent will haunt us here too.
@@ -199,7 +207,7 @@ control_accept(int listenfd, short event, void *arg)
 	}
 
 	if ((c = calloc(1, sizeof(struct ctl_conn))) == NULL) {
-		log_warn("%s", __func__);
+		log_warn("%s: calloc", __func__);
 		close(connfd);
 		return;
 	}
@@ -208,12 +216,16 @@ control_accept(int listenfd, short event, void *arg)
 	c->iev.handler = control_dispatch_imsg;
 	c->iev.events = EV_READ;
 	c->iev.data = cs;
-	assert(c->iev.ev == NULL);
 	c->iev.ev = event_new(event_get_base(cs->cs_ev), c->iev.ibuf.fd,
 	    c->iev.events, c->iev.handler, c->iev.data);
-	assert(c->iev.ev != NULL);
-	event_add(c->iev.ev, NULL);
+	if (c->iev.ev == NULL) {
+		log_warn("%s: event_new", __func__);
+		close(connfd);
+		free(c);
+		return;
+	}
 
+	event_add(c->iev.ev, NULL);
 	TAILQ_INSERT_TAIL(&ctl_conns, c, entry);
 }
 

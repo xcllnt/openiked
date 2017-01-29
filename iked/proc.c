@@ -265,11 +265,11 @@ proc_listen(struct privsep *ps, struct privsep_proc *procs, size_t nproc)
 		dst = procs[i].p_id;
 
 		if (src == dst)
-			fatal("proc_listen: cannot peer with oneself");
+			fatal("%s: cannot peer with oneself", __func__);
 
 		if ((ps->ps_ievs[dst] = calloc(ps->ps_instances[dst],
 		    sizeof(struct imsgev))) == NULL)
-			fatal("proc_open");
+			fatal("%s: calloc", __func__);
 
 		for (n = 0; n < ps->ps_instances[dst]; n++) {
 			if (pp->pp_pipes[dst][n] == -1)
@@ -283,13 +283,14 @@ proc_listen(struct privsep *ps, struct privsep_proc *procs, size_t nproc)
 			ps->ps_ievs[dst][n].data = &ps->ps_ievs[dst][n];
 			procs[i].p_instance = n;
 
-			assert(ps->ps_ievs[dst][n].ev == NULL);
 			ps->ps_ievs[dst][n].ev = event_new(ps->ps_evbase,
 			    ps->ps_ievs[dst][n].ibuf.fd,
 			    ps->ps_ievs[dst][n].events,
 			    ps->ps_ievs[dst][n].handler,
 			    ps->ps_ievs[dst][n].data);
-			assert(ps->ps_ievs[dst][n].ev != NULL);
+			if (ps->ps_ievs[dst][n].ev == NULL)
+				fatal("%s: event_new", __func__);
+
 			event_add(ps->ps_ievs[dst][n].ev, NULL);
 		}
 	}
@@ -437,7 +438,6 @@ proc_run(struct privsep *ps, struct privsep_proc *p,
 	    ps->ps_instance + 1, ps->ps_instances[p->p_id], getpid());
 #endif
 
-	assert(ps->ps_evbase == NULL);
 	ps->ps_evbase = event_base_new();
 
 	ps->ps_evsigint = evsignal_new(ps->ps_evbase, SIGINT,

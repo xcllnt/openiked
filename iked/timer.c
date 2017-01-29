@@ -40,16 +40,21 @@ timer_set(struct iked *env, struct iked_timer *tmr,
 {
 
 	if (tmr->tmr_ev != NULL) {
-		event_free(tmr->tmr_ev);
-		tmr->tmr_ev = NULL;
+		if (evtimer_pending(tmr->tmr_ev, NULL))
+			evtimer_del(tmr->tmr_ev);
 	}
 
 	tmr->tmr_env = env;
 	tmr->tmr_cb = cb;
 	tmr->tmr_cbarg = arg;
-	assert(tmr->tmr_ev == NULL);
-	tmr->tmr_ev = evtimer_new(env->sc_ps.ps_evbase, timer_callback, tmr);
-	assert(tmr->tmr_ev != NULL);
+
+	if (tmr->tmr_ev == NULL) {
+		tmr->tmr_ev = evtimer_new(env->sc_ps.ps_evbase, timer_callback,
+		    tmr);
+		assert(tmr->tmr_ev != NULL);
+	} else
+		evtimer_assign(tmr->tmr_ev, env->sc_ps.ps_evbase,
+		    timer_callback, tmr);
 }
 
 void
@@ -58,7 +63,9 @@ timer_add(struct iked *env, struct iked_timer *tmr, int timeout)
 	struct timeval		 tv = { timeout };
 
 	assert(tmr->tmr_ev != NULL);
-	evtimer_del(tmr->tmr_ev);
+
+	if (evtimer_pending(tmr->tmr_ev, NULL))
+		evtimer_del(tmr->tmr_ev);
 	evtimer_add(tmr->tmr_ev, &tv);
 }
 

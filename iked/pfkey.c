@@ -1789,16 +1789,17 @@ pfkey_init(struct iked *env, int fd)
 	/* Set up a timer to process messages deferred by the pfkey_reply */
 	pfkey_timer_tv.tv_sec = 1;
 	pfkey_timer_tv.tv_usec = 0;
-	assert(pfkey_timer_ev == NULL);
 	pfkey_timer_ev = evtimer_new(env->sc_ps.ps_evbase, pfkey_timer_cb,
 	    env);
 
 	/* Register the pfkey socket event handler */
 	env->sc_pfkey = fd;
-	assert(env->sc_pfkeyev == NULL);
 	env->sc_pfkeyev = event_new(env->sc_ps.ps_evbase, env->sc_pfkey,
 	    EV_READ|EV_PERSIST, pfkey_dispatch, env);
-	assert(env->sc_pfkeyev != NULL);
+
+	if (pfkey_timer_ev == NULL || env->sc_pfkeyev == NULL)
+		fatal("pfkey_init: failed to allocate events");
+
 	event_add(env->sc_pfkeyev, NULL);
 
 	/* Register it to get ESP and AH acquires from the kernel */

@@ -21,7 +21,6 @@
 #include <sys/uio.h>
 #include <sys/stat.h>
 
-#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -126,12 +125,12 @@ ocsp_connect(struct iked *env)
 	if (connect(fd, res->ai_addr, res->ai_addrlen) == -1) {
 		/* register callback for ansync connect */
 		if (errno == EINPROGRESS) {
-			assert(oc->oc_sock.sock_ev == NULL);
 			oc->oc_sock.sock_ev = event_new(env->sc_ps.ps_evbase,
 			    fd, EV_WRITE, ocsp_connect_cb, oc);
-			assert(oc->oc_sock.sock_ev != NULL);
-			event_add(oc->oc_sock.sock_ev, NULL);
-			ret = 0;
+			if (oc->oc_sock.sock_ev != NULL) {
+				event_add(oc->oc_sock.sock_ev, NULL);
+				ret = 0;
+			}
 		} else
 			log_debug("%s: error while connecting: %s", __func__,
 			    strerror(errno));
@@ -198,7 +197,6 @@ ocsp_connect_finish(struct iked *env, int fd, struct ocsp_connect *oc)
 	}
 	if (oc) {
 		free(oc->oc_path);
-		assert(oc->oc_sock.sock_ev != NULL);
 		event_free(oc->oc_sock.sock_ev);
 		free(oc);
 	}
@@ -272,8 +270,8 @@ ocsp_free(struct iked_ocsp *ocsp)
 {
 	if (ocsp != NULL) {
 		if (ocsp->ocsp_sock != NULL) {
-			assert(ocsp->ocsp_sock->sock_ev != NULL);
-			event_free(ocsp->ocsp_sock->sock_ev);
+			if (ocsp->ocsp_sock->sock_ev != NULL)
+				event_free(ocsp->ocsp_sock->sock_ev);
 			close(ocsp->ocsp_sock->sock_fd);
 			free(ocsp->ocsp_sock);
 		}
@@ -332,12 +330,13 @@ ocsp_receive_fd(struct iked *env, struct imsg *imsg)
 	if (!OCSP_REQ_CTX_set1_req(ocsp->ocsp_req_ctx, ocsp->ocsp_req))
 		goto done;
 
-	assert(sock->sock_ev == NULL);
 	sock->sock_ev = event_new(env->sc_ps.ps_evbase, sock->sock_fd,
 	    EV_WRITE, ocsp_callback, ocsp);
-	assert(sock->sock_ev != NULL);
-	event_add(sock->sock_ev, NULL);
-	ret = 0;
+	if (sock->sock_ev != NULL) {
+		event_add(sock->sock_ev, NULL);
+		ret = 0;
+	}
+
  done:
 	if (ret == -1)
 		ocsp_validate_finish(ocsp, 0);	/* failed */
@@ -407,14 +406,12 @@ ocsp_callback(int fd, short event, void *arg)
 		ocsp_parse_response(ocsp, resp);
 		return;
 	}
-	assert(sock->sock_ev == NULL);
 	if (BIO_should_read(ocsp->ocsp_cbio))
-		sock->sock_ev = event_new(sock->sock_env->sc_ps.ps_evbase,
+		event_assign(sock->sock_ev, sock->sock_env->sc_ps.ps_evbase,
 		    sock->sock_fd, EV_READ, ocsp_callback, ocsp);
 	else if (BIO_should_write(ocsp->ocsp_cbio))
-		sock->sock_ev = event_new(sock->sock_env->sc_ps.ps_evbase,
+		event_assign(sock->sock_ev, sock->sock_env->sc_ps.ps_evbase,
 		    sock->sock_fd, EV_WRITE, ocsp_callback, ocsp);
-	assert(sock->sock_ev != NULL);
 	event_add(sock->sock_ev, NULL);
 }
 
