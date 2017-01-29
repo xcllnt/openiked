@@ -19,8 +19,9 @@
 
 #include <sys/param.h>	/* roundup */
 #include <sys/socket.h>
-#include <sys/wait.h>
+#include <sys/time.h>
 #include <sys/uio.h>
+#include <sys/wait.h>
 
 #include <netinet/in.h>
 #include <netinet/udp.h>
