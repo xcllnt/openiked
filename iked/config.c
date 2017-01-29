@@ -635,7 +635,7 @@ config_getsocket(struct iked *env, struct imsg *imsg,
 	    IKED_NATT_PORT)
 		*nptr = sock;
 
-	sock->sock_ev = event_new(env->sc_ps.ps_evbase, sock->sock_fd,
+	sock->sock_ev = event_new(env->sc_evbase, sock->sock_fd,
 	    EV_READ|EV_PERSIST, cb, sock);
 	if (sock->sock_ev == NULL)
 		fatal("config_getsocket: event_new");

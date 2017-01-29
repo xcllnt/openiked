@@ -49,11 +49,11 @@ timer_set(struct iked *env, struct iked_timer *tmr,
 	tmr->tmr_cbarg = arg;
 
 	if (tmr->tmr_ev == NULL) {
-		tmr->tmr_ev = evtimer_new(env->sc_ps.ps_evbase, timer_callback,
+		tmr->tmr_ev = evtimer_new(env->sc_evbase, timer_callback,
 		    tmr);
 		assert(tmr->tmr_ev != NULL);
 	} else
-		evtimer_assign(tmr->tmr_ev, env->sc_ps.ps_evbase,
+		evtimer_assign(tmr->tmr_ev, env->sc_evbase,
 		    timer_callback, tmr);
 }
 

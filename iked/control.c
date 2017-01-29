@@ -127,7 +127,7 @@ control_init(struct privsep *ps, struct control_sock *cs)
 	cs->cs_fd = fd;
 	cs->cs_env = env;
 
-	cs->cs_ev = event_new(ps->ps_evbase, cs->cs_fd, EV_READ,
+	cs->cs_ev = event_new(env->sc_evbase, cs->cs_fd, EV_READ,
 	    control_accept, cs);
 	if (cs->cs_ev == NULL) {
 		log_warn("%s: event_new", __func__);
@@ -136,7 +136,7 @@ control_init(struct privsep *ps, struct control_sock *cs)
 		return (-1);
 	}
 
-	cs->cs_evt = evtimer_new(ps->ps_evbase, control_accept, cs);
+	cs->cs_evt = evtimer_new(env->sc_evbase, control_accept, cs);
 	if (cs->cs_evt == NULL) {
 		log_warn("%s: evtimer_new", __func__);
 		close(fd);
@@ -178,6 +178,7 @@ void
 control_accept(int listenfd, short event, void *arg)
 {
 	struct control_sock	*cs = arg;
+	struct iked		*env = cs->cs_env;
 	int			 connfd;
 	socklen_t		 len;
 	struct sockaddr_un	 sun;
@@ -216,7 +217,7 @@ control_accept(int listenfd, short event, void *arg)
 	c->iev.handler = control_dispatch_imsg;
 	c->iev.events = EV_READ;
 	c->iev.data = cs;
-	c->iev.ev = event_new(event_get_base(cs->cs_ev), c->iev.ibuf.fd,
+	c->iev.ev = event_new(env->sc_evbase, c->iev.ibuf.fd,
 	    c->iev.events, c->iev.handler, c->iev.data);
 	if (c->iev.ev == NULL) {
 		log_warn("%s: event_new", __func__);

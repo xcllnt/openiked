@@ -535,7 +535,6 @@ struct privsep {
 	unsigned int			 ps_instance;
 
 	/* Event and signal handlers */
-	struct event_base		*ps_evbase;
 	struct event			*ps_evsigint;
 	struct event			*ps_evsigterm;
 	struct event			*ps_evsigchld;
@@ -614,6 +613,7 @@ struct iked {
 #define IKED_INITIATOR_INTERVAL		 60
 #define IKED_INITIATOR_RETRY		 1
 
+	struct event_base               *sc_evbase;
 	struct privsep			 sc_ps;
 
 	struct iked_ocsp_requests	 sc_ocsp;

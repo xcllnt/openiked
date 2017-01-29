@@ -125,8 +125,8 @@ ocsp_connect(struct iked *env)
 	if (connect(fd, res->ai_addr, res->ai_addrlen) == -1) {
 		/* register callback for ansync connect */
 		if (errno == EINPROGRESS) {
-			oc->oc_sock.sock_ev = event_new(env->sc_ps.ps_evbase,
-			    fd, EV_WRITE, ocsp_connect_cb, oc);
+			oc->oc_sock.sock_ev = event_new(env->sc_evbase, fd,
+			    EV_WRITE, ocsp_connect_cb, oc);
 			if (oc->oc_sock.sock_ev != NULL) {
 				event_add(oc->oc_sock.sock_ev, NULL);
 				ret = 0;
@@ -330,8 +330,8 @@ ocsp_receive_fd(struct iked *env, struct imsg *imsg)
 	if (!OCSP_REQ_CTX_set1_req(ocsp->ocsp_req_ctx, ocsp->ocsp_req))
 		goto done;
 
-	sock->sock_ev = event_new(env->sc_ps.ps_evbase, sock->sock_fd,
-	    EV_WRITE, ocsp_callback, ocsp);
+	sock->sock_ev = event_new(env->sc_evbase, sock->sock_fd, EV_WRITE,
+	    ocsp_callback, ocsp);
 	if (sock->sock_ev != NULL) {
 		event_add(sock->sock_ev, NULL);
 		ret = 0;
@@ -407,10 +407,10 @@ ocsp_callback(int fd, short event, void *arg)
 		return;
 	}
 	if (BIO_should_read(ocsp->ocsp_cbio))
-		event_assign(sock->sock_ev, sock->sock_env->sc_ps.ps_evbase,
+		event_assign(sock->sock_ev, sock->sock_env->sc_evbase,
 		    sock->sock_fd, EV_READ, ocsp_callback, ocsp);
 	else if (BIO_should_write(ocsp->ocsp_cbio))
-		event_assign(sock->sock_ev, sock->sock_env->sc_ps.ps_evbase,
+		event_assign(sock->sock_ev, sock->sock_env->sc_evbase,
 		    sock->sock_fd, EV_WRITE, ocsp_callback, ocsp);
 	event_add(sock->sock_ev, NULL);
 }

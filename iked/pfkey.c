@@ -35,7 +35,6 @@
 #endif
 #include <netinet/udp.h>
 
-#include <assert.h>
 #include <err.h>
 #include <errno.h>
 #include <stdio.h>
@@ -1789,12 +1788,11 @@ pfkey_init(struct iked *env, int fd)
 	/* Set up a timer to process messages deferred by the pfkey_reply */
 	pfkey_timer_tv.tv_sec = 1;
 	pfkey_timer_tv.tv_usec = 0;
-	pfkey_timer_ev = evtimer_new(env->sc_ps.ps_evbase, pfkey_timer_cb,
-	    env);
+	pfkey_timer_ev = evtimer_new(env->sc_evbase, pfkey_timer_cb, env);
 
 	/* Register the pfkey socket event handler */
 	env->sc_pfkey = fd;
-	env->sc_pfkeyev = event_new(env->sc_ps.ps_evbase, env->sc_pfkey,
+	env->sc_pfkeyev = event_new(env->sc_evbase, env->sc_pfkey,
 	    EV_READ|EV_PERSIST, pfkey_dispatch, env);
 
 	if (pfkey_timer_ev == NULL || env->sc_pfkeyev == NULL)

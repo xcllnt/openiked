@@ -138,7 +138,7 @@ proc_reap(struct privsep *ps, pid_t pid, int status)
 		return (0);
 
 	if (WIFSIGNALED(status)) {
-		if (WTERMSIG(status) != SIGKILL)
+		if (WTERMSIG(status) != SIGKILL && WTERMSIG(status) != SIGABRT)
 			ps->ps_restart = 1;
 		log_warnx("%s[%d] terminated with signal %d",
 		    ps->ps_title[id], pid, WTERMSIG(status));
@@ -225,8 +225,9 @@ proc_open(struct privsep *ps, struct privsep_proc *p,
 void
 proc_listen(struct privsep *ps, struct privsep_proc *procs, size_t nproc)
 {
-	unsigned int		 i, dst, src, n, m;
+	struct iked		*env = ps->ps_env;
 	struct privsep_pipes	*pp;
+	unsigned int		 i, dst, src, n, m;
 
 	/*
 	 * Close unused pipes
@@ -283,7 +284,7 @@ proc_listen(struct privsep *ps, struct privsep_proc *procs, size_t nproc)
 			ps->ps_ievs[dst][n].data = &ps->ps_ievs[dst][n];
 			procs[i].p_instance = n;
 
-			ps->ps_ievs[dst][n].ev = event_new(ps->ps_evbase,
+			ps->ps_ievs[dst][n].ev = event_new(env->sc_evbase,
 			    ps->ps_ievs[dst][n].ibuf.fd,
 			    ps->ps_ievs[dst][n].events,
 			    ps->ps_ievs[dst][n].handler,
@@ -370,6 +371,7 @@ proc_run(struct privsep *ps, struct privsep_proc *p,
     struct privsep_proc *procs, unsigned int nproc,
     void (*run)(struct privsep *, struct privsep_proc *, void *), void *arg)
 {
+	struct iked		*env;
 	pid_t			 pid;
 	struct passwd		*pw;
 	const char		*root;
@@ -395,7 +397,10 @@ proc_run(struct privsep *ps, struct privsep_proc *p,
 		return (pid);
 	}
 
+	env = ps->ps_env;
 	pw = ps->ps_pw;
+
+	env->sc_evbase = event_base_new();
 
 	if (p->p_id == PROC_CONTROL && ps->ps_instance == 0) {
 		if (control_init(ps, &ps->ps_csock) == -1)
@@ -438,24 +443,22 @@ proc_run(struct privsep *ps, struct privsep_proc *p,
 	    ps->ps_instance + 1, ps->ps_instances[p->p_id], getpid());
 #endif
 
-	ps->ps_evbase = event_base_new();
-
-	ps->ps_evsigint = evsignal_new(ps->ps_evbase, SIGINT,
+	ps->ps_evsigint = evsignal_new(env->sc_evbase, SIGINT,
 	    proc_sig_handler, p);
 	evsignal_add(ps->ps_evsigint, NULL);
-	ps->ps_evsigterm = evsignal_new(ps->ps_evbase, SIGTERM,
+	ps->ps_evsigterm = evsignal_new(env->sc_evbase, SIGTERM,
 	    proc_sig_handler, p);
 	evsignal_add(ps->ps_evsigterm, NULL);
-	ps->ps_evsigchld = evsignal_new(ps->ps_evbase, SIGCHLD,
+	ps->ps_evsigchld = evsignal_new(env->sc_evbase, SIGCHLD,
 	    proc_sig_handler, p);
 	evsignal_add(ps->ps_evsigchld, NULL);
-	ps->ps_evsighup = evsignal_new(ps->ps_evbase, SIGHUP,
+	ps->ps_evsighup = evsignal_new(env->sc_evbase, SIGHUP,
 	    proc_sig_handler, p);
 	evsignal_add(ps->ps_evsighup, NULL);
-	ps->ps_evsigpipe = evsignal_new(ps->ps_evbase, SIGPIPE,
+	ps->ps_evsigpipe = evsignal_new(env->sc_evbase, SIGPIPE,
 	    proc_sig_handler, p);
 	evsignal_add(ps->ps_evsigpipe, NULL);
-	ps->ps_evsigusr1 = evsignal_new(ps->ps_evbase, SIGUSR1,
+	ps->ps_evsigusr1 = evsignal_new(env->sc_evbase, SIGUSR1,
 	    proc_sig_handler, p);
 	evsignal_add(ps->ps_evsigusr1, NULL);
 
@@ -477,7 +480,7 @@ proc_run(struct privsep *ps, struct privsep_proc *p,
 	if (run != NULL)
 		run(ps, p, arg);
 
-	event_base_dispatch(ps->ps_evbase);
+	event_base_dispatch(env->sc_evbase);
 
 	proc_shutdown(p);
 
@@ -505,7 +508,7 @@ proc_dispatch(int fd, short event, void *arg)
 		if (n == 0) {
 			/* this pipe is dead, so remove the event handler */
 			event_del(iev->ev);
-			event_base_loopexit(ps->ps_evbase, NULL);
+			event_base_loopexit(ps->ps_env->sc_evbase, NULL);
 			return;
 		}
 	}
@@ -582,10 +585,10 @@ imsg_event_add(struct imsgev *iev)
 
 	if (iev->ev != NULL) {
 		event_del(iev->ev);
-		event_assign(iev->ev, iev->proc->p_ps->ps_evbase, iev->ibuf.fd,
-		    iev->events, iev->handler, iev->data);
+		event_assign(iev->ev, iev->proc->p_env->sc_evbase,
+		    iev->ibuf.fd, iev->events, iev->handler, iev->data);
 	} else {
-		iev->ev = event_new(iev->proc->p_ps->ps_evbase, iev->ibuf.fd,
+		iev->ev = event_new(iev->proc->p_env->sc_evbase, iev->ibuf.fd,
 		    iev->events, iev->handler, iev->data);
 		assert(iev->ev != NULL);
 	}

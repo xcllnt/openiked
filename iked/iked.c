@@ -210,24 +210,24 @@ main(int argc, char *argv[], char *envp[])
 	setproctitle("parent");
 	log_procinit("parent");
 
-	ps->ps_evbase = event_base_new();
+	env->sc_evbase = event_base_new();
 
-	ps->ps_evsigint = evsignal_new(ps->ps_evbase, SIGINT,
+	ps->ps_evsigint = evsignal_new(env->sc_evbase, SIGINT,
 	    parent_sig_handler, ps);
 	evsignal_add(ps->ps_evsigint, NULL);
-	ps->ps_evsigterm = evsignal_new(ps->ps_evbase, SIGTERM,
+	ps->ps_evsigterm = evsignal_new(env->sc_evbase, SIGTERM,
 	    parent_sig_handler, ps);
 	evsignal_add(ps->ps_evsigterm, NULL);
-	ps->ps_evsigchld = evsignal_new(ps->ps_evbase, SIGCHLD,
+	ps->ps_evsigchld = evsignal_new(env->sc_evbase, SIGCHLD,
 	    parent_sig_handler, ps);
 	evsignal_add(ps->ps_evsigchld, NULL);
-	ps->ps_evsighup = evsignal_new(ps->ps_evbase, SIGHUP,
+	ps->ps_evsighup = evsignal_new(env->sc_evbase, SIGHUP,
 	    parent_sig_handler, ps);
 	evsignal_add(ps->ps_evsighup, NULL);
-	ps->ps_evsigpipe = evsignal_new(ps->ps_evbase, SIGPIPE,
+	ps->ps_evsigpipe = evsignal_new(env->sc_evbase, SIGPIPE,
 	    parent_sig_handler, ps);
 	evsignal_add(ps->ps_evsigpipe, NULL);
-	ps->ps_evsigusr1 = evsignal_new(ps->ps_evbase, SIGUSR1,
+	ps->ps_evsigusr1 = evsignal_new(env->sc_evbase, SIGUSR1,
 	    parent_sig_handler, ps);
 	evsignal_add(ps->ps_evsigusr1, NULL);
 
@@ -242,7 +242,7 @@ main(int argc, char *argv[], char *envp[])
 	if (parent_configure(env, config) == -1)
 		fatalx("configuration failed");
 
-	event_base_dispatch(ps->ps_evbase);
+	event_base_dispatch(env->sc_evbase);
 
 	proc_close(&env->sc_ps);
 	proc_kill(&env->sc_ps);
@@ -365,7 +365,7 @@ parent_sig_handler(int sig, short event, void *arg)
 		log_info("%s[%d] received %s", ps->ps_title[PROC_PARENT],
 		    ps->ps_pid[PROC_PARENT],
 		    (sig == SIGTERM) ? "SIGTERM": "SIGINT");
-		event_base_loopexit(ps->ps_evbase, NULL);
+		event_base_loopexit(ps->ps_env->sc_evbase, NULL);
 		break;
 	case SIGCHLD:
 		die = 0;
@@ -375,7 +375,7 @@ parent_sig_handler(int sig, short event, void *arg)
 				die |= proc_reap(ps, pid, status);
 		} while (pid > 0 || (pid == -1 && errno == EINTR));
 		if (die)
-			event_base_loopexit(ps->ps_evbase, NULL);
+			event_base_loopexit(ps->ps_env->sc_evbase, NULL);
 		break;
 	default:
 		fatalx("unexpected signal");
