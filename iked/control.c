@@ -36,7 +36,8 @@
 
 #define	CONTROL_BACKLOG	5
 
-struct ctl_connlist ctl_conns;
+static struct ctl_connlist ctl_conns;
+static struct privsep_proc *ctl_proc;
 
 void
 	 control_accept(int, short, void *);
@@ -55,6 +56,9 @@ static struct privsep_proc procs[] = {
 pid_t
 control(struct privsep *ps, struct privsep_proc *p)
 {
+
+	TAILQ_INIT(&ctl_conns);
+	ctl_proc = p;
 	return (proc_run(ps, p, procs, nitems(procs), control_run, NULL));
 }
 
@@ -217,6 +221,7 @@ control_accept(int listenfd, short event, void *arg)
 	c->iev.handler = control_dispatch_imsg;
 	c->iev.events = EV_READ;
 	c->iev.data = cs;
+	c->iev.proc = ctl_proc;
 	c->iev.ev = event_new(env->sc_evbase, c->iev.ibuf.fd,
 	    c->iev.events, c->iev.handler, c->iev.data);
 	if (c->iev.ev == NULL) {

@@ -469,7 +469,6 @@ proc_run(struct privsep *ps, struct privsep_proc *p,
 	proc_listen(ps, procs, nproc);
 
 	if (p->p_id == PROC_CONTROL && ps->ps_instance == 0) {
-		TAILQ_INIT(&ctl_conns);
 		if (control_listen(ps, &ps->ps_csock) == -1)
 			fatalx(__func__);
 		TAILQ_FOREACH(rcs, &ps->ps_rcsocks, cs_entry)
