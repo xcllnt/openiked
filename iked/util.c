@@ -41,23 +41,21 @@ extern int	 verbose;
 int
 socket_af(struct sockaddr *sa, in_port_t port)
 {
-	unsigned int salen;
 
 	errno = 0;
 	switch (sa->sa_family) {
 	case AF_INET:
 		((struct sockaddr_in *)sa)->sin_port = port;
-		salen = sizeof(struct sockaddr_in);
+		SET_SA_LEN(sa, sizeof(struct sockaddr_in));
 		break;
 	case AF_INET6:
 		((struct sockaddr_in6 *)sa)->sin6_port = port;
-		salen = sizeof(struct sockaddr_in6);
+		SET_SA_LEN(sa, sizeof(struct sockaddr_in6));
 		break;
 	default:
 		errno = EPFNOSUPPORT;
 		return (-1);
 	}
-	SET_SA_LEN(sa, salen);
 	return (0);
 }
 
