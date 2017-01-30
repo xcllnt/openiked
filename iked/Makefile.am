@@ -21,7 +21,7 @@ LIBCOMPAT=	$(top_builddir)/openbsd-compat/libopenbsd-compat.a
 LDADD=		$(LIBCOMPAT) libpfkey.a libcurve25519.a
 AM_CPPFLAGS=	-include $(top_srcdir)/openbsd-compat/includes.h \
 		-I$(top_srcdir)/openbsd-compat -I$(srcdir) \
-		-D_BSD_SOURCE @CPPFLAGS@ @DEFS@
+		@CPPFLAGS@ @DEFS@
 MANPAGES=	iked.8.out iked.conf.5.out
 MANPAGES_IN=	iked.8 iked.conf.5
 CONFIGFILES=	iked.conf.out
