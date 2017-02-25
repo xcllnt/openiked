@@ -725,10 +725,8 @@ ikev2_init_recv(struct iked *env, struct iked_message *msg,
 		return;
 	}
 
-	if (ikev2_pld_parse(env, hdr, msg, msg->msg_offset) != 0) {
-		log_debug("%s: failed to parse message", __func__);
+	if (ikev2_pld_parse(env, hdr, msg, msg->msg_offset) != 0)
 		return;
-	}
 
 	if (!ikev2_msg_frompeer(msg))
 		return;
@@ -2099,10 +2097,8 @@ ikev2_resp_recv(struct iked *env, struct iked_message *msg,
 		return;
 	}
 
-	if (ikev2_pld_parse(env, hdr, msg, msg->msg_offset) != 0) {
-		log_debug("%s: failed to parse message", __func__);
+	if (ikev2_pld_parse(env, hdr, msg, msg->msg_offset) != 0)
 		return;
-	}
 
 	if (!ikev2_msg_frompeer(msg))
 		return;
@@ -3555,7 +3551,7 @@ ikev2_send_informational(struct iked *env, struct iked_message *msg)
 		break;
 	}
 
-	if (ikev2_next_payload(pld, sizeof(*n), IKEV2_PAYLOAD_NONE) == -1)
+	if (ikev2_next_payload(pld, length, IKEV2_PAYLOAD_NONE) == -1)
 		goto done;
 
 	if (sa != NULL && msg->msg_e) {
