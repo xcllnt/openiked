@@ -651,8 +651,6 @@ struct iked_user *
 	 config_new_user(struct iked *, struct iked_user *);
 uint64_t
 	 config_getspi(void);
-struct iked_transform *
-	 config_findtransform(struct iked_proposals *, uint8_t, unsigned int);
 void	 config_free_policy(struct iked *, struct iked_policy *);
 struct iked_proposal *
 	 config_add_proposal(struct iked_proposals *, unsigned int,
@@ -662,8 +660,14 @@ void	 config_free_flows(struct iked_flows *);
 void	 config_free_childsas(struct iked *, struct iked_childsas *,
 	    struct iked_spi *, struct iked_spi *);
 struct iked_transform *
-	 config_add_transform(struct iked_proposal *,
-	    unsigned int, unsigned int, unsigned int, unsigned int);
+	 config_add_transform(struct iked_proposal *, unsigned int,
+	    unsigned int, unsigned int, unsigned int);
+struct iked_transform *
+	 config_find_transform(struct iked_proposals *, unsigned int,
+	    unsigned int, unsigned int);
+struct iked_transform *
+	 config_first_transform(struct iked_proposals *, unsigned int,
+	    unsigned int);
 int	 config_setcoupled(struct iked *, unsigned int);
 int	 config_getcoupled(struct iked *, unsigned int);
 int	 config_setmode(struct iked *, unsigned int);

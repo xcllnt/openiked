@@ -109,6 +109,8 @@ int
 ikev2_pld_parse(struct iked *env, struct ike_header *hdr,
     struct iked_message *msg, size_t offset)
 {
+	int rv;
+
 	log_debug("%s: header ispi %s rspi %s"
 	    " nextpayload %s version 0x%02x exchange %s flags 0x%02x"
 	    " msgid %d length %d response %d", __func__,
@@ -129,8 +131,11 @@ ikev2_pld_parse(struct iked *env, struct ike_header *hdr,
 
 	offset += sizeof(*hdr);
 
-	return (ikev2_pld_payloads(env, msg, offset,
-	    betoh32(hdr->ike_length), hdr->ike_nextpayload));
+	rv = ikev2_pld_payloads(env, msg, offset, betoh32(hdr->ike_length),
+	    hdr->ike_nextpayload);
+	if (rv != 0 && msg->msg_error == 0)
+		log_debug("%s: failed to parse message", __func__);
+	return (rv);
 }
 
 int
@@ -668,6 +673,9 @@ int
 ikev2_pld_ke(struct iked *env, struct ikev2_payload *pld,
     struct iked_message *msg, size_t offset, size_t left)
 {
+	struct iked_policy		*pol;
+	struct iked_sa			*sa;
+	struct iked_transform		*xform;
 	struct ikev2_keyexchange	 kex;
 	uint8_t				*buf;
 	size_t				 len;
@@ -691,6 +699,32 @@ ikev2_pld_ke(struct iked *env, struct ikev2_payload *pld,
 	if (left < len) {
 		log_debug("%s: malformed payload: smaller than specified "
 		     "(%zu < %zu)", __func__, left, len);
+		return (-1);
+	}
+
+	/*
+	 * Make sure we know the DH group and also that it's in the
+	 * configured list of acceptable proposals.  If not, then we
+	 * need to reject the KE and suggest one that we do allow.
+	 */
+	sa = msg->msg_sa;
+	pol = sa->sa_policy;
+	group_free(pol->pol_peerdh);
+	pol->pol_peerdh = group_get(betoh16(kex.kex_dhgroup));
+	if (pol->pol_peerdh == NULL) {
+		/* We don't know this DH group */
+		log_info("%s: unknown DH group (%d)", __func__,
+		    betoh16(kex.kex_dhgroup));
+		msg->msg_error = IKEV2_N_INVALID_KE_PAYLOAD;
+		return (-1);
+	}
+	xform = config_find_transform(&pol->pol_proposals, IKEV2_XFORMTYPE_DH,
+	    0, pol->pol_peerdh->id);
+	if (xform == NULL) {
+		/* This DH is not configured */
+		log_info("%s: Disallowed DH group %s", __func__,
+		    print_map(pol->pol_peerdh->id, ikev2_xformdh_map));
+		msg->msg_error = IKEV2_N_INVALID_KE_PAYLOAD;
 		return (-1);
 	}
 

@@ -282,8 +282,10 @@ struct ikev2_notify {
 	uint8_t		 n_protoid;		/* Protocol Id */
 	uint8_t		 n_spisize;		/* SPI size */
 	uint16_t	 n_type;		/* Notify message type */
-	/* Followed by variable length SPI */
-	/* Followed by variable length notification data */
+	/* n_data represents the start of variable data */
+	uint8_t		 n_data[0];
+	/* Optional SPI (n_spisize bytes) */
+	/* Additional optional notification data */
 } __packed;
 
 #define IKEV2_N_UNSUPPORTED_CRITICAL_PAYLOAD	1	/* RFC4306 */

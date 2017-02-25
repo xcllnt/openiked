@@ -294,6 +294,7 @@ config_free_policy(struct iked *env, struct iked_policy *pol)
  remove:
 	config_free_proposals(&pol->pol_proposals, 0);
 	config_free_flows(&pol->pol_flows);
+	group_free(pol->pol_peerdh);
 	free(pol);
 }
 
@@ -463,14 +464,34 @@ config_add_transform(struct iked_proposal *prop, unsigned int type,
 }
 
 struct iked_transform *
-config_findtransform(struct iked_proposals *props, uint8_t type,
+config_find_transform(struct iked_proposals *props, unsigned int type,
+    unsigned int proto, unsigned int id)
+{
+	struct iked_proposal	*prop;
+	struct iked_transform	*xform;
+	unsigned int		 i;
+
+	TAILQ_FOREACH(prop, props, prop_entry) {
+		if (proto != 0 && prop->prop_protoid != proto)
+			continue;
+		for (i = 0; i < prop->prop_nxforms; i++) {
+			xform = prop->prop_xforms + i;
+			if (xform->xform_type == type && xform->xform_id == id)
+				return (xform);
+		}
+	}
+	return (NULL);
+}
+
+struct iked_transform *
+config_first_transform(struct iked_proposals *props, unsigned int type,
     unsigned int proto)
 {
 	struct iked_proposal	*prop;
 	struct iked_transform	*xform;
 	unsigned int		 i;
 
-	/* Search of the first transform with the desired type */
+	/* Search for the first transform with the desired type */
 	TAILQ_FOREACH(prop, props, prop_entry) {
 		/* Find any proposal or only selected SA proto */
 		if (proto != 0 && prop->prop_protoid != proto)

@@ -725,10 +725,8 @@ ikev2_init_recv(struct iked *env, struct iked_message *msg,
 		return;
 	}
 
-	if (ikev2_pld_parse(env, hdr, msg, msg->msg_offset) != 0) {
-		log_debug("%s: failed to parse message", __func__);
+	if (ikev2_pld_parse(env, hdr, msg, msg->msg_offset) != 0)
 		return;
-	}
 
 	if (!ikev2_msg_frompeer(msg))
 		return;
@@ -2099,10 +2097,8 @@ ikev2_resp_recv(struct iked *env, struct iked_message *msg,
 		return;
 	}
 
-	if (ikev2_pld_parse(env, hdr, msg, msg->msg_offset) != 0) {
-		log_debug("%s: failed to parse message", __func__);
+	if (ikev2_pld_parse(env, hdr, msg, msg->msg_offset) != 0)
 		return;
-	}
 
 	if (!ikev2_msg_frompeer(msg))
 		return;
@@ -2716,7 +2712,7 @@ ikev2_send_create_child_sa(struct iked *env, struct iked_sa *sa,
 		goto done;
 	len = ibuf_size(nonce);
 
-	if (config_findtransform(&pol->pol_proposals, IKEV2_XFORMTYPE_DH,
+	if (config_first_transform(&pol->pol_proposals, IKEV2_XFORMTYPE_DH,
 	    protoid)) {
 		log_debug("%s: enable PFS", __func__);
 		ikev2_sa_cleanup_dh(sa);
@@ -3499,12 +3495,15 @@ int
 ikev2_send_informational(struct iked *env, struct iked_message *msg)
 {
 	struct iked_message		 resp;
+	struct iked_transform		*xform;
 	struct ike_header		*hdr;
 	struct ikev2_payload		*pld;
 	struct ikev2_notify		*n;
 	struct iked_sa			*sa = msg->msg_sa, sah;
 	struct ibuf			*buf, *e = NULL;
+	size_t				 length;
 	int				 ret = -1;
+	uint16_t			 dhgroup;
 
 	if (msg->msg_error == 0)
 		return (0);
@@ -3522,15 +3521,13 @@ ikev2_send_informational(struct iked *env, struct iked_message *msg)
 	if ((pld = ikev2_add_payload(e)) == NULL)
 		goto done;
 
-	if ((n = ibuf_advance(e, sizeof(*n))) == NULL)
-		goto done;
-	n->n_protoid = IKEV2_SAPROTO_IKE;	/* XXX ESP etc. */
-	n->n_spisize = 0;
-	n->n_type = htobe16(msg->msg_error);
-
+	length = sizeof(*n);
 	switch (msg->msg_error) {
 	case IKEV2_N_INVALID_IKE_SPI:
 	case IKEV2_N_NO_PROPOSAL_CHOSEN:
+		break;
+	case IKEV2_N_INVALID_KE_PAYLOAD:
+		length += sizeof(dhgroup);
 		break;
 	default:
 		log_debug("%s: unsupported notification %s", __func__,
@@ -3538,7 +3535,23 @@ ikev2_send_informational(struct iked *env, struct iked_message *msg)
 		goto done;
 	}
 
-	if (ikev2_next_payload(pld, sizeof(*n), IKEV2_PAYLOAD_NONE) == -1)
+	if ((n = ibuf_advance(e, length)) == NULL)
+		goto done;
+	n->n_protoid = IKEV2_SAPROTO_IKE;	/* XXX ESP etc. */
+	n->n_spisize = 0;
+	n->n_type = htobe16(msg->msg_error);
+
+	switch (msg->msg_error) {
+	case IKEV2_N_INVALID_KE_PAYLOAD:
+		/* Suggest a valid DH group */
+		xform = config_first_transform(&sa->sa_policy->pol_proposals,
+		    IKEV2_XFORMTYPE_DH, 0);
+		dhgroup = htobe16(xform->xform_id);
+		memcpy(n->n_data, &dhgroup, sizeof(dhgroup));
+		break;
+	}
+
+	if (ikev2_next_payload(pld, length, IKEV2_PAYLOAD_NONE) == -1)
 		goto done;
 
 	if (sa != NULL && msg->msg_e) {
@@ -3777,7 +3790,7 @@ ikev2_sa_initiator_dh(struct iked_sa *sa, struct iked_message *msg,
 	struct iked_transform	*xform;
 
 	if (sa->sa_dhgroup == NULL) {
-		if ((xform = config_findtransform(&pol->pol_proposals,
+		if ((xform = config_first_transform(&pol->pol_proposals,
 		    IKEV2_XFORMTYPE_DH, proto)) == NULL) {
 			log_debug("%s: did not find dh transform", __func__);
 			return (-1);
@@ -3870,7 +3883,7 @@ ikev2_sa_initiator(struct iked *env, struct iked_sa *sa,
 		sa_stateflags(sa, IKED_REQ_SA);
 
 	if (sa->sa_encr == NULL) {
-		if ((xform = config_findtransform(&sa->sa_proposals,
+		if ((xform = config_first_transform(&sa->sa_proposals,
 		    IKEV2_XFORMTYPE_ENCR, 0)) == NULL) {
 			log_debug("%s: did not find encr transform", __func__);
 			return (-1);
@@ -3883,7 +3896,7 @@ ikev2_sa_initiator(struct iked *env, struct iked_sa *sa,
 	}
 
 	if (sa->sa_prf == NULL) {
-		if ((xform = config_findtransform(&sa->sa_proposals,
+		if ((xform = config_first_transform(&sa->sa_proposals,
 		    IKEV2_XFORMTYPE_PRF, 0)) == NULL) {
 			log_debug("%s: did not find prf transform", __func__);
 			return (-1);
@@ -3896,7 +3909,7 @@ ikev2_sa_initiator(struct iked *env, struct iked_sa *sa,
 	}
 
 	if (sa->sa_integr == NULL) {
-		if ((xform = config_findtransform(&sa->sa_proposals,
+		if ((xform = config_first_transform(&sa->sa_proposals,
 		    IKEV2_XFORMTYPE_INTEGR, 0)) == NULL) {
 			log_debug("%s: did not find integr transform",
 			    __func__);
@@ -3925,13 +3938,12 @@ ikev2_sa_responder_dh(struct iked_kex *kex, struct iked_proposals *proposals,
 	struct iked_transform	*xform;
 
 	if (kex->kex_dhgroup == NULL) {
-		if ((xform = config_findtransform(proposals,
+		if ((xform = config_first_transform(proposals,
 		    IKEV2_XFORMTYPE_DH, proto)) == NULL) {
 			log_debug("%s: did not find dh transform", __func__);
 			return (-1);
 		}
-		if ((kex->kex_dhgroup =
-		    group_get(xform->xform_id)) == NULL) {
+		if ((kex->kex_dhgroup = group_get(xform->xform_id)) == NULL) {
 			log_debug("%s: invalid dh %d", __func__,
 			    xform->xform_id);
 			return (-1);
@@ -4003,7 +4015,7 @@ ikev2_sa_responder(struct iked *env, struct iked_sa *sa, struct iked_sa *osa,
 		sa_stateflags(sa, IKED_REQ_SA);
 
 	if (sa->sa_encr == NULL) {
-		if ((xform = config_findtransform(&sa->sa_proposals,
+		if ((xform = config_first_transform(&sa->sa_proposals,
 		    IKEV2_XFORMTYPE_ENCR, 0)) == NULL) {
 			log_debug("%s: did not find encr transform", __func__);
 			return (-1);
@@ -4016,7 +4028,7 @@ ikev2_sa_responder(struct iked *env, struct iked_sa *sa, struct iked_sa *osa,
 	}
 
 	if (sa->sa_prf == NULL) {
-		if ((xform = config_findtransform(&sa->sa_proposals,
+		if ((xform = config_first_transform(&sa->sa_proposals,
 		    IKEV2_XFORMTYPE_PRF, 0)) == NULL) {
 			log_debug("%s: did not find prf transform", __func__);
 			return (-1);
@@ -4029,7 +4041,7 @@ ikev2_sa_responder(struct iked *env, struct iked_sa *sa, struct iked_sa *osa,
 	}
 
 	if (sa->sa_integr == NULL) {
-		if ((xform = config_findtransform(&sa->sa_proposals,
+		if ((xform = config_first_transform(&sa->sa_proposals,
 		    IKEV2_XFORMTYPE_INTEGR, 0)) == NULL) {
 			log_debug("%s: did not find integr transform",
 			    __func__);
