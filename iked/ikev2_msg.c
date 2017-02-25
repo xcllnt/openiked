@@ -302,18 +302,13 @@ ikev2_msg_send(struct iked *env, struct iked_message *msg)
 
 	exchange = hdr->ike_exchange;
 	flags = hdr->ike_flags;
-	log_info("%s: %s %s from %s%s%s to %s msgid %u, %ld bytes%s",
-	    __func__, print_map(exchange, ikev2_exchange_map),
-	    (flags & IKEV2_FLAG_RESPONSE)
-		? "response" : "request",
+	log_info("%s: %s %s from %s to %s msgid %u, %ld bytes%s", __func__,
+	    print_map(exchange, ikev2_exchange_map),
+	    (flags & IKEV2_FLAG_RESPONSE) ? "response" : "request",
 	    print_host((struct sockaddr *)&msg->msg_local, NULL, 0),
-	    (flags & IKEV2_FLAG_RESPONSE)
-		? "" : " ispi ",
-	    (flags & IKEV2_FLAG_RESPONSE)
-		? "" :  print_spi(sa->sa_hdr.sh_ispi, 8),
 	    print_host((struct sockaddr *)&msg->msg_peer, NULL, 0),
-	    betoh32(hdr->ike_msgid), ibuf_length(buf),
-	    (isnatt) ? ", NAT-T" : "");
+	    betoh32(hdr->ike_msgid),
+	    ibuf_length(buf), isnatt ? ", NAT-T" : "");
 
 	if (isnatt) {
 		if (ibuf_prepend(buf, &natt, sizeof(natt)) == -1) {
