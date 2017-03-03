@@ -731,7 +731,7 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 	sadb.sadb_sa_exttype = SADB_EXT_SA;
 	sadb.sadb_sa_spi = htonl(sa->csa_spi.spi);
 	sadb.sadb_sa_state = SADB_SASTATE_MATURE;
-	sadb.sadb_sa_replay = 64;
+	sadb.sadb_sa_replay = 512;
 
 #if defined(_OPENBSD_IPSEC_API_VERSION)
 	if (!sa->csa_transport)
@@ -1109,7 +1109,7 @@ pfkey_sa_last_used(int sd, struct iked_childsa *sa, uint64_t *last_used)
 	sadb.sadb_sa_exttype = SADB_EXT_SA;
 	sadb.sadb_sa_spi = htonl(sa->csa_spi.spi);
 	sadb.sadb_sa_state = SADB_SASTATE_MATURE;
-	sadb.sadb_sa_replay = 64;
+	sadb.sadb_sa_replay = 512;
 
 	bzero(&sa_src, sizeof(sa_src));
 	sa_src.sadb_address_len =
