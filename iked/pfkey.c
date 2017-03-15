@@ -1565,8 +1565,11 @@ pfkey_flow_delete(int fd, struct iked_flow *flow)
 {
 	uint8_t		satype;
 
-	/* Handle lazy mode exception. */
-	if (flow->flow_loaded <= 0)
+	if (!flow->flow_loaded)
+		return (0);
+
+	/* Handle lazy mode. */
+	if (flow->flow_precious)
 		return (0);
 
 	if (pfkey_map(pfkey_satype, flow->flow_saproto, &satype) == -1)

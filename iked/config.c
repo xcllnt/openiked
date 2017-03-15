@@ -103,6 +103,7 @@ config_replace(struct iked *env, struct iked_config *new)
 			    policy_find_flow(pol, flowkey, 0);
 			if (flow != NULL) {
 				flow->flow_loaded = flowkey->flow_loaded;
+				flow->flow_precious = flowkey->flow_precious;
 				flow->flow_saproto = flowkey->flow_saproto;
 				flow->flow_transport = flowkey->flow_transport;
 				flow->flow_dir = flowkey->flow_dir;

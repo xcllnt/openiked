@@ -140,8 +140,8 @@ struct iked_flow {
 	unsigned int			 flow_dir;	/* in/out */
 	struct iked_addr		 flow_prenat;
 
-	/* flow_loaded must be signed! */
-	int8_t				 flow_loaded;	/* pfkey done */
+	uint8_t				 flow_loaded;	/* pfkey done */
+	uint8_t				 flow_precious;	/* Don't delete flow */
 
 	uint8_t				 flow_saproto;
 	uint8_t				 flow_ipproto;
