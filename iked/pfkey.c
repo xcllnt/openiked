@@ -35,6 +35,7 @@
 #endif
 #include <netinet/udp.h>
 
+#include <assert.h>
 #include <err.h>
 #include <errno.h>
 #include <stdio.h>
@@ -61,6 +62,9 @@ static unsigned int sadb_ipv6refcnt = 0;
 static int pfkey_blockipv6 = 0;
 static struct event *pfkey_timer_ev;
 static struct timeval pfkey_timer_tv;
+
+static int pfkey_nalgs[SADB_SATYPE_MAX][IKEV2_XFORMTYPE_MAX];
+static struct sadb_alg *pfkey_algs[SADB_SATYPE_MAX][IKEV2_XFORMTYPE_MAX];
 
 struct pfkey_message {
 	SIMPLEQ_ENTRY(pfkey_message)
@@ -143,37 +147,103 @@ void	pfkey_timer_cb(int, short, void *);
 int	pfkey_process(struct iked *, struct pfkey_message *);
 
 static int
-pfkey_process_supported(uint8_t *msg, ssize_t msglen, int exttype)
+pfkey_process_supported(uint8_t *msg, ssize_t msglen, int satype, int exttype)
 {
 	struct sadb_supported	*sup;
-	struct sadb_alg		*alg;
-	int			 nalgs;
+	struct sadb_alg		*algs;
+	int			 nalgs, xfrmtype;
+
+	assert(satype < SADB_SATYPE_MAX);
 
 	sup = pfkey_find_ext(msg, msglen, exttype);
 	if (sup == NULL)
 		return (errno);
 
-	nalgs = (sup->sadb_supported_len * PFKEYV2_CHUNK -
-	    sizeof(struct sadb_supported)) / sizeof(*alg);
-	alg = (void *)(sup + 1);
-	while (nalgs-- > 0) {
-		printf("XXX(%u): id=%u ivlen=%u bits=[%u..%u]\n",
-		    exttype, alg->sadb_alg_id, alg->sadb_alg_ivlen,
-		    alg->sadb_alg_minbits, alg->sadb_alg_maxbits);
-		alg++;
+	switch (exttype) {
+	case SADB_EXT_SUPPORTED_AUTH:
+		xfrmtype = IKEV2_XFORMTYPE_INTEGR;
+		break;
+	case SADB_EXT_SUPPORTED_ENCRYPT:
+		xfrmtype = IKEV2_XFORMTYPE_ENCR;
+		break;
+	default:
+		return (0);
 	}
 
+	nalgs = (sup->sadb_supported_len * PFKEYV2_CHUNK -
+	    sizeof(struct sadb_supported)) / sizeof(*algs);
+
+	algs = calloc(nalgs, sizeof(struct sadb_alg));
+	if (algs == NULL)
+		return (errno);
+
+	pfkey_nalgs[satype][xfrmtype] = nalgs;
+	pfkey_algs[satype][xfrmtype] = algs;
+	memcpy(algs, sup + 1, nalgs * sizeof(struct sadb_alg));
+
+	while (nalgs-- > 0) {
+		log_debug("%s: satype=%u xformtype=%u: id=%u ivlen=%u"
+		    " bits=[%u..%u]", __func__, satype, xfrmtype,
+		    algs->sadb_alg_id, algs->sadb_alg_ivlen,
+		    algs->sadb_alg_minbits, algs->sadb_alg_maxbits);
+		algs++;
+	}
 	return (0);
 }
 
+/*
+ * Return whether the kernel supports the transform (xform).  We
+ * look up the xform in the table created at initialization time.
+ * This function is only called for ENCR, INTEGR and ESN. And
+ * only for ESP & AH.
+ */
 int
 pfkey_supports_xform(uint8_t protoid, struct iked_transform *xform)
 {
+	struct sadb_alg		*algs;
+	int			 alg, nalgs;
+	uint8_t			 satype;
 
-	printf("XXX(%u): type=%u, id=%u length=%u keylength=%u\n",
-	    protoid, xform->xform_type, xform->xform_id,
-	    xform->xform_length, xform->xform_keylength);
-	return (1);
+	/* Avoid out of bound accesses */
+	if (xform->xform_type >= IKEV2_XFORMTYPE_MAX)
+		return (0);
+
+	/* Map IKE's protoid onto pfkey's satype. */
+	if (pfkey_map(pfkey_satype, protoid, &satype) == -1)
+		return (0);
+
+	assert(satype < SADB_SATYPE_MAX);
+
+	nalgs = pfkey_nalgs[satype][xform->xform_type];
+	algs = pfkey_algs[satype][xform->xform_type];
+
+	/*
+	 * If we didn't get the list of supported algorithms from the
+	 * kernel, then only support ID 0. This is predominantly done
+	 * for IKEV2_XFORMTYPE_ESN. We don't yet know if the kernel
+	 * supports ESN, so we reject id=1 (ESN enabled) and allow
+	 * id=0 (ESN disabled).
+	 */
+	if (nalgs == 0 && xform->xform_id == 0)
+		return (1);
+
+	/*
+	 * Iterate over the array and return 1 if the ID is present and
+	 * the length is within min and max.
+	 */
+	for (alg = 0; alg < nalgs; alg++) {
+		if (xform->xform_id != algs[alg].sadb_alg_id)
+			continue;
+		if (xform->xform_length >= algs[alg].sadb_alg_minbits &&
+		    xform->xform_length <= algs[alg].sadb_alg_maxbits)
+			return (1);
+	}
+
+	log_debug("%s: satype=%u xformtype=%u: id=%u length=%u: rejected",
+	    __func__, satype, xform->xform_type, xform->xform_id,
+	    xform->xform_length);
+
+	return (0);
 }
 
 int
@@ -1851,10 +1921,10 @@ pfkey_init(struct iked *env, int fd)
 		error = errno;
 	if (!error)
 		error = pfkey_process_supported(reply, rlen,
-		    SADB_EXT_SUPPORTED_AUTH);
+		    SADB_SATYPE_ESP, SADB_EXT_SUPPORTED_AUTH);
 	if (!error)
 		error = pfkey_process_supported(reply, rlen,
-		    SADB_EXT_SUPPORTED_ENCRYPT);
+		    SADB_SATYPE_ESP, SADB_EXT_SUPPORTED_ENCRYPT);
 	if (error)
 		fatal("pfkey_init: failed to set up ESP acquire: error %d",
 		    error);
@@ -1875,10 +1945,10 @@ pfkey_init(struct iked *env, int fd)
 		error = errno;
 	if (!error)
 		error = pfkey_process_supported(reply, rlen,
-		    SADB_EXT_SUPPORTED_AUTH);
+		    SADB_SATYPE_AH, SADB_EXT_SUPPORTED_AUTH);
 	if (!error)
 		error = pfkey_process_supported(reply, rlen,
-		    SADB_EXT_SUPPORTED_ENCRYPT);
+		    SADB_SATYPE_AH, SADB_EXT_SUPPORTED_ENCRYPT);
 	if (error)
 		fatal("pfkey_init: failed to set up AH acquire: error %d",
 		    error);
