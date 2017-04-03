@@ -1968,6 +1968,11 @@ ikev2_add_proposals(struct iked *env, struct iked_sa *sa, struct ibuf *buf,
 		for (i = 0; i < prop->prop_nxforms; i++) {
 			xform = prop->prop_xforms + i;
 
+			/* Only match xforms that the kernel supports. */
+			if (prop->prop_protoid != IKEV2_SAPROTO_IKE &&
+			    !pfkey_supports_xform(prop->prop_protoid, xform))
+				continue;
+
 			if ((xflen = ikev2_add_transform(buf,
 			    i == prop->prop_nxforms - 1 ?
 			    IKEV2_XFORM_LAST : IKEV2_XFORM_MORE,
@@ -3654,12 +3659,20 @@ ikev2_match_proposals(struct iked_proposal *local, struct iked_proposal *peer,
 		tpeer = peer->prop_xforms + i;
 		for (j = 0; j < local->prop_nxforms; j++) {
 			tlocal = local->prop_xforms + j;
+
+			/* Only match xforms that the kernel supports. */
+			if (local->prop_protoid != IKEV2_SAPROTO_IKE &&
+			    !pfkey_supports_xform(local->prop_protoid, tlocal))
+				continue;
+
 			if (tpeer->xform_type != tlocal->xform_type ||
 			    tpeer->xform_id != tlocal->xform_id ||
 			    tpeer->xform_length != tlocal->xform_length)
 				continue;
+
 			if (tpeer->xform_type > IKEV2_XFORMTYPE_MAX)
 				continue;
+
 			type = tpeer->xform_type;
 
 			if (xforms[type] == NULL || tlocal->xform_score <

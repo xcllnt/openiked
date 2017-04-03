@@ -855,6 +855,7 @@ ssize_t	 eap_identity_request(struct ibuf *);
 int	 eap_parse(struct iked *, struct iked_sa *, void *, int);
 
 /* pfkey.c */
+int	 pfkey_supports_xform(uint8_t, struct iked_transform *);
 int	 pfkey_couple(int, struct iked_sas *, int);
 int	 pfkey_flow_add(int fd, struct iked_flow *);
 int	 pfkey_flow_delete(int fd, struct iked_flow *);

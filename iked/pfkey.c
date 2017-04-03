@@ -142,6 +142,40 @@ void	*pfkey_find_ext(uint8_t *, ssize_t, int);
 void	pfkey_timer_cb(int, short, void *);
 int	pfkey_process(struct iked *, struct pfkey_message *);
 
+static int
+pfkey_process_supported(uint8_t *msg, ssize_t msglen, int exttype)
+{
+	struct sadb_supported	*sup;
+	struct sadb_alg		*alg;
+	int			 nalgs;
+
+	sup = pfkey_find_ext(msg, msglen, exttype);
+	if (sup == NULL)
+		return (errno);
+
+	nalgs = (sup->sadb_supported_len * PFKEYV2_CHUNK -
+	    sizeof(struct sadb_supported)) / sizeof(*alg);
+	alg = (void *)(sup + 1);
+	while (nalgs-- > 0) {
+		printf("XXX(%u): id=%u ivlen=%u bits=[%u..%u]\n",
+		    exttype, alg->sadb_alg_id, alg->sadb_alg_ivlen,
+		    alg->sadb_alg_minbits, alg->sadb_alg_maxbits);
+		alg++;
+	}
+
+	return (0);
+}
+
+int
+pfkey_supports_xform(uint8_t protoid, struct iked_transform *xform)
+{
+
+	printf("XXX(%u): type=%u, id=%u length=%u keylength=%u\n",
+	    protoid, xform->xform_type, xform->xform_id,
+	    xform->xform_length, xform->xform_keylength);
+	return (1);
+}
+
 int
 pfkey_couple(int sd, struct iked_sas *sas, int couple)
 {
@@ -1066,7 +1100,7 @@ pfkey_sa(int sd, uint8_t satype, uint8_t action, struct iked_childsa *sa)
 int
 pfkey_sa_last_used(int sd, struct iked_childsa *sa, uint64_t *last_used)
 {
-	struct sadb_msg		*msg, smsg;
+	struct sadb_msg		 smsg;
 	struct sadb_address	 sa_src, sa_dst;
 	struct sadb_sa		 sadb;
 	struct sadb_lifetime	*sa_life;
@@ -1155,14 +1189,6 @@ pfkey_sa_last_used(int sd, struct iked_childsa *sa, uint64_t *last_used)
 	if ((ret = pfkey_write(sd, &smsg, iov, iov_cnt, &data, &n)) != 0)
 		return (-1);
 
-	msg = (struct sadb_msg *)data;
-	if (msg->sadb_msg_errno != 0) {
-		errno = msg->sadb_msg_errno;
-		ret = -1;
-		log_warn("%s: message", __func__);
-		goto done;
-	}
-
 #if defined(_OPENBSD_IPSEC_API_VERSION)
 	exttype = SADB_X_EXT_LIFETIME_LASTUSE;
 #else
@@ -1187,7 +1213,7 @@ int
 pfkey_sa_getspi(int sd, uint8_t satype, struct iked_childsa *sa,
     uint32_t *spip)
 {
-	struct sadb_msg		*msg, smsg;
+	struct sadb_msg		 smsg;
 	struct sadb_address	 sa_src, sa_dst;
 	struct sadb_sa		*sa_ext;
 	struct sadb_spirange	 sa_spirange;
@@ -1273,12 +1299,6 @@ pfkey_sa_getspi(int sd, uint8_t satype, struct iked_childsa *sa,
 	if ((ret = pfkey_write(sd, &smsg, iov, iov_cnt, &data, &n)) != 0)
 		return (-1);
 
-	msg = (struct sadb_msg *)data;
-	if (msg->sadb_msg_errno != 0) {
-		errno = msg->sadb_msg_errno;
-		log_warn("%s: message", __func__);
-		goto done;
-	}
 	if ((sa_ext = pfkey_find_ext(data, n, SADB_EXT_SA)) == NULL) {
 		log_debug("%s: erronous reply", __func__);
 		goto done;
@@ -1793,8 +1813,11 @@ pfkey_socket(void)
 void
 pfkey_init(struct iked *env, int fd)
 {
-	struct sadb_msg		smsg;
-	struct iovec		iov;
+	struct sadb_msg		 smsg;
+	struct iovec		 iov;
+	uint8_t			*reply;
+	ssize_t			 rlen;
+	int			 error;
 
 	/* Set up a timer to process messages deferred by the pfkey_reply */
 	pfkey_timer_tv.tv_sec = 1;
@@ -1823,8 +1846,18 @@ pfkey_init(struct iked *env, int fd)
 	iov.iov_base = &smsg;
 	iov.iov_len = sizeof(smsg);
 
-	if (pfkey_write(fd, &smsg, &iov, 1, NULL, NULL))
-		fatal("pfkey_init: failed to set up ESP acquires");
+	error = 0;
+	if (pfkey_write(fd, &smsg, &iov, 1, &reply, &rlen) == -1)
+		error = errno;
+	if (!error)
+		error = pfkey_process_supported(reply, rlen,
+		    SADB_EXT_SUPPORTED_AUTH);
+	if (!error)
+		error = pfkey_process_supported(reply, rlen,
+		    SADB_EXT_SUPPORTED_ENCRYPT);
+	if (error)
+		fatal("pfkey_init: failed to set up ESP acquire: error %d",
+		    error);
 
 	bzero(&smsg, sizeof(smsg));
 	smsg.sadb_msg_version = PF_KEY_V2;
@@ -1837,8 +1870,18 @@ pfkey_init(struct iked *env, int fd)
 	iov.iov_base = &smsg;
 	iov.iov_len = sizeof(smsg);
 
-	if (pfkey_write(fd, &smsg, &iov, 1, NULL, NULL))
-		fatal("pfkey_init: failed to set up AH acquires");
+	error = 0;
+	if (pfkey_write(fd, &smsg, &iov, 1, &reply, &rlen) == -1)
+		error = errno;
+	if (!error)
+		error = pfkey_process_supported(reply, rlen,
+		    SADB_EXT_SUPPORTED_AUTH);
+	if (!error)
+		error = pfkey_process_supported(reply, rlen,
+		    SADB_EXT_SUPPORTED_ENCRYPT);
+	if (error)
+		fatal("pfkey_init: failed to set up AH acquire: error %d",
+		    error);
 
 	if (env->sc_opts & IKED_OPT_NOIPV6BLOCKING)
 		return;
@@ -1852,8 +1895,17 @@ pfkey_init(struct iked *env, int fd)
 void *
 pfkey_find_ext(uint8_t *data, ssize_t len, int type)
 {
-	struct sadb_ext	*ext = (struct sadb_ext *)(data +
-	    sizeof(struct sadb_msg));
+	struct sadb_msg		*msg;
+	struct sadb_ext		*ext;
+
+	msg = (void *)data;
+	if (msg->sadb_msg_errno != 0) {
+		errno = msg->sadb_msg_errno;
+		log_warn("%s: error %d", __func__, msg->sadb_msg_errno);
+		return (NULL);
+	}
+
+	ext = (void *)(msg + 1);
 
 	while (ext && ((uint8_t *)ext - data < len)) {
 		if (ext->sadb_ext_type == type)
@@ -1862,6 +1914,7 @@ pfkey_find_ext(uint8_t *data, ssize_t len, int type)
 		    ext->sadb_ext_len * PFKEYV2_CHUNK);
 	}
 
+	errno = 0;
 	return (NULL);
 }
 
