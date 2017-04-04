@@ -200,9 +200,10 @@ pfkey_process_supported(uint8_t *msg, ssize_t msglen, int satype, int exttype)
 int
 pfkey_supports_xform(uint8_t protoid, struct iked_transform *xform)
 {
-	struct sadb_alg		*algs;
-	int			 alg, nalgs;
-	uint8_t			 satype;
+	const struct pfkey_constmap	*map;
+	struct sadb_alg			*algs;
+	int				 alg, nalgs;
+	uint8_t				 satype, xfid;
 
 	/* Avoid out of bound accesses */
 	if (xform->xform_type >= IKEV2_XFORMTYPE_MAX)
@@ -214,35 +215,54 @@ pfkey_supports_xform(uint8_t protoid, struct iked_transform *xform)
 
 	assert(satype < SADB_SATYPE_MAX);
 
-	nalgs = pfkey_nalgs[satype][xform->xform_type];
-	algs = pfkey_algs[satype][xform->xform_type];
+	/* Get the correct map. */
+	switch (xform->xform_type) {
+	case IKEV2_XFORMTYPE_ENCR:
+		map = pfkey_encr;
+		break;
+	case IKEV2_XFORMTYPE_INTEGR:
+		map = pfkey_integr;
+		break;
+	default:
+		map = NULL;
+		break;
+	}
 
 	/*
-	 * If we didn't get the list of supported algorithms from the
-	 * kernel, then only support ID 0. This is predominantly done
-	 * for IKEV2_XFORMTYPE_ESN. We don't yet know if the kernel
-	 * supports ESN, so we reject id=1 (ESN enabled) and allow
-	 * id=0 (ESN disabled).
+	 * If we can't map from IKE's id to pfkey's id, then we only
+	 * accept id 0. We do this to accept ESN id 0, which is no
+	 * ESN for ESP.
 	 */
-	if (nalgs == 0 && xform->xform_id == 0)
+	if (map == NULL) {
+		if (xform->xform_id != 0)
+			goto reject;
 		return (1);
+	}
+	if (pfkey_map(map, xform->xform_id, &xfid) == -1)
+		goto reject;
+
+	nalgs = pfkey_nalgs[satype][xform->xform_type];
+	algs = pfkey_algs[satype][xform->xform_type];
 
 	/*
 	 * Iterate over the array and return 1 if the ID is present and
 	 * the length is within min and max.
 	 */
 	for (alg = 0; alg < nalgs; alg++) {
-		if (xform->xform_id != algs[alg].sadb_alg_id)
+		if (xfid != algs[alg].sadb_alg_id)
 			continue;
 		if (xform->xform_length >= algs[alg].sadb_alg_minbits &&
 		    xform->xform_length <= algs[alg].sadb_alg_maxbits)
 			return (1);
+		if (xform->xform_length == 0 &&
+		    algs[alg].sadb_alg_minbits == algs[alg].sadb_alg_maxbits)
+			return (1);
 	}
 
+ reject:
 	log_debug("%s: satype=%u xformtype=%u: id=%u length=%u: rejected",
 	    __func__, satype, xform->xform_type, xform->xform_id,
 	    xform->xform_length);
-
 	return (0);
 }
 
