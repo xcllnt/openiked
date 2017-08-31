@@ -1907,11 +1907,25 @@ ikev2_add_proposals(struct iked *env, struct iked_sa *sa, struct ibuf *buf,
 	ssize_t				 length = 0, saplength, xflen;
 	uint64_t			 spi64;
 	uint32_t			 spi32, spi;
-	unsigned int			 i;
+	unsigned int			 i, nxforms;
 
 	TAILQ_FOREACH(prop, proposals, prop_entry) {
 		if ((protoid && prop->prop_protoid != protoid) ||
 		    (!protoid && prop->prop_protoid == IKEV2_SAPROTO_IKE))
+			continue;
+
+		if (prop->prop_protoid != IKEV2_SAPROTO_IKE) {
+			nxforms = 0;
+			for (i = 0; i < prop->prop_nxforms; i++) {
+				xform = prop->prop_xforms + i;
+				/* Only match xforms the kernel supports. */
+				if (pfkey_supports_xform(prop->prop_protoid,
+				    xform))
+					nxforms++;
+			}
+		} else
+			nxforms = prop->prop_nxforms;
+		if (nxforms == 0)
 			continue;
 
 		if (protoid != IKEV2_SAPROTO_IKE && initiator) {
@@ -1945,7 +1959,7 @@ ikev2_add_proposals(struct iked *env, struct iked_sa *sa, struct ibuf *buf,
 		sap->sap_proposalnr = prop->prop_id;
 		sap->sap_protoid = prop->prop_protoid;
 		sap->sap_spisize = prop->prop_localspi.spi_size;
-		sap->sap_transforms = prop->prop_nxforms;
+		sap->sap_transforms = nxforms;
 		saplength = sizeof(*sap);
 
 		switch (prop->prop_localspi.spi_size) {
@@ -1968,18 +1982,19 @@ ikev2_add_proposals(struct iked *env, struct iked_sa *sa, struct ibuf *buf,
 		for (i = 0; i < prop->prop_nxforms; i++) {
 			xform = prop->prop_xforms + i;
 
-			/* Only match xforms that the kernel supports. */
+			/* Only match xforms the kernel supports. */
 			if (prop->prop_protoid != IKEV2_SAPROTO_IKE &&
 			    !pfkey_supports_xform(prop->prop_protoid, xform))
 				continue;
 
-			if ((xflen = ikev2_add_transform(buf,
-			    i == prop->prop_nxforms - 1 ?
-			    IKEV2_XFORM_LAST : IKEV2_XFORM_MORE,
+			xflen = ikev2_add_transform(buf,
+			    (nxforms > 1) ? IKEV2_XFORM_MORE : IKEV2_XFORM_LAST,
 			    xform->xform_type, xform->xform_id,
-			    xform->xform_length)) == -1)
+			    xform->xform_length);
+			if (xflen == -1)
 				return (-1);
 
+			nxforms--;
 			saplength += xflen;
 		}
 
