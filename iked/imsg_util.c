@@ -198,3 +198,24 @@ ibuf_prepend(struct ibuf *buf, void *data, size_t len)
 
 	return (0);
 }
+
+struct ibuf *
+ibuf_new_cert(void *data, size_t len)
+{
+	struct ibuf	*buf;
+	size_t		 padding;
+
+	buf = ibuf_new(&len, sizeof(len));
+	if (buf == NULL)
+		return (NULL);
+	if (ibuf_add(buf, data, len) == 0) {
+		len = ((len + sizeof(len) - 1) & ~(sizeof(len) - 1)) - len;
+		if (len == 0)
+			return (buf);
+		padding = 0;
+		if (ibuf_add(buf, &padding, len) == 0)
+			return (buf);
+	}
+	ibuf_free(buf);
+	return (NULL);
+}

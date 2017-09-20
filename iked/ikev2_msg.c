@@ -738,9 +738,9 @@ ikev2_msg_authverify(struct iked *env, struct iked_sa *sa,
 	uint8_t				 keytype;
 
 	if (sa->sa_hdr.sh_initiator)
-		id = &sa->sa_rcert;
+		id = &sa->sa_rauthid;
 	else
-		id = &sa->sa_icert;
+		id = &sa->sa_iauthid;
 
 	if ((dsa = dsa_verify_new(auth->auth_method, sa->sa_prf)) == NULL) {
 		log_debug("%s: invalid auth method", __func__);
@@ -813,9 +813,9 @@ ikev2_msg_authsign(struct iked *env, struct iked_sa *sa,
 	uint8_t			 keytype;
 
 	if (sa->sa_hdr.sh_initiator)
-		id = &sa->sa_icert;
+		id = &sa->sa_iauthid;
 	else
-		id = &sa->sa_rcert;
+		id = &sa->sa_rauthid;
 
 	if ((dsa = dsa_sign_new(auth->auth_method, prf)) == NULL) {
 		log_debug("%s: invalid auth method", __func__);

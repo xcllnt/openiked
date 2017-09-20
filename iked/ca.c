@@ -412,9 +412,9 @@ ca_getreq(struct iked *env, struct imsg *imsg)
 	uint8_t			 type;
 	uint8_t			*ptr;
 	size_t			 len;
-	unsigned int		 i, n;
-	X509			*ca = NULL, *cert = NULL;
-	struct ibuf		*buf;
+	unsigned int		 i;
+	X509			*ca, *cert, *subca;
+	struct ibuf		*buf, *chain;
 	struct iked_static_id	 id;
 
 	ptr = (uint8_t *)imsg->data;
@@ -426,55 +426,95 @@ ca_getreq(struct iked *env, struct imsg *imsg)
 	memcpy(&id, ptr, sizeof(id));
 	if (id.id_type == IKEV2_ID_NONE)
 		return (-1);
+
 	memcpy(&sh, ptr + sizeof(id), sizeof(sh));
 	memcpy(&type, ptr + sizeof(id) + sizeof(sh), sizeof(uint8_t));
 
 	switch (type) {
 	case IKEV2_CERT_RSA_KEY:
-		if (store->ca_pubkey.id_type != type ||
-		    (buf = store->ca_pubkey.id_buf) == NULL)
+		if (store->ca_pubkey.id_type != type)
+			goto fail;
+		buf = ibuf_dup(store->ca_pubkey.id_buf);
+		if (buf == NULL)
 			return (-1);
 
 		log_debug("%s: using local public key of type %s", __func__,
 		    print_map(type, ikev2_cert_map));
+
 		break;
 	case IKEV2_CERT_X509_CERT:
-		for (n = 1; i < len; n++, i += SHA_DIGEST_LENGTH) {
-			if ((ca = ca_by_subjectpubkey(store->ca_cas, ptr + i,
-			    SHA_DIGEST_LENGTH)) == NULL)
-				continue;
+		if (i == len) {
+			log_warnx("CERTREQ: empty CA chain");
+			goto fail;
+		}
 
-			log_debug("%s: found CA %s", __func__, ca->name);
-
-			if ((cert = ca_by_issuer(store->ca_certs,
-			    X509_get_subject_name(ca), &id)) != NULL) {
-				/* XXX
-				 * should we re-validate our own cert here?
-				 */
+		/* Find the first or outer-most CA we know. */
+		ca = NULL;
+		while (i < len) {
+			ca = ca_by_subjectpubkey(store->ca_cas, ptr + i,
+			    SHA_DIGEST_LENGTH);
+			if (ca != NULL)
 				break;
-			}
+			i += SHA_DIGEST_LENGTH;
 		}
-		if (ca == NULL || cert == NULL) {
-			log_warnx("%s: no valid local certificate found",
-			    __func__);
-			type = IKEV2_CERT_NONE;
-			ca_setcert(env, &sh, NULL, type, NULL, 0, PROC_IKEV2);
-			return (0);
+		if (ca == NULL) {
+			log_warnx("CERTREQ: unknown CAs in chain");
+			goto fail;
 		}
-		log_debug("%s: found local certificate %s", __func__,
-		    cert->name);
 
-		if ((buf = ca_x509_serialize(cert)) == NULL)
-			return (-1);
-		break;
+		log_debug("%s: found CA %s", __func__, ca->name);
+
+		chain = ibuf_new(NULL, 0);
+
+ again:
+		/* Find a certificate issued by the CA. */
+		cert = ca_by_issuer(store->ca_certs, X509_get_subject_name(ca),
+		    &id);
+		if (cert != NULL) {
+			log_debug("%s: found local certificate %s", __func__,
+			    cert->name);
+			buf = ca_x509_serialize(cert);
+			ibuf_prepend(chain, ibuf_data(buf), ibuf_size(buf));
+			ibuf_release(buf);
+			buf = chain;
+			break;
+		}
+
+		/*
+		 * No certificate found.  Look for a subordinate CA.
+		 *
+		 * XXX we may have multiple subordinate CAs that are
+		 * issued by the CA we have.  We really need to try
+		 * them in order.
+		 */
+		subca = ca_by_issuer(store->ca_cas, X509_get_subject_name(ca),
+		    NULL);
+		if (subca == NULL) {
+			log_warnx("CERTREQ: No known certificates issued "
+			    "by CA %s", ca->name);
+			ibuf_release(chain);
+			goto fail;
+		}
+
+		log_debug("%s: found subordinate CA %s", __func__,
+		    subca->name);
+		buf = ca_x509_serialize(subca);
+		ibuf_prepend(chain, ibuf_data(buf), ibuf_size(buf));
+		ibuf_release(buf);
+		ca = subca;
+		goto again;
 	default:
 		log_warnx("%s: unknown cert type requested", __func__);
-		return (-1);
+		goto fail;
 	}
 
-	ca_setcert(env, &sh, NULL, type,
-	    ibuf_data(buf), ibuf_size(buf), PROC_IKEV2);
+	ca_setcert(env, &sh, NULL, type, ibuf_data(buf), ibuf_size(buf),
+	    PROC_IKEV2);
+	ibuf_release(buf);
+	return (0);
 
+ fail:
+	ca_setcert(env, &sh, NULL, IKEV2_CERT_NONE, NULL, 0, PROC_IKEV2);
 	return (0);
 }
 
@@ -519,9 +559,9 @@ ca_getauth(struct iked *env, struct imsg *imsg)
 	sa.sa_policy = &policy;
 	policy.pol_auth.auth_method = method;
 	if (sh.sh_initiator)
-		id = &sa.sa_icert;
+		id = &sa.sa_iauthid;
 	else
-		id = &sa.sa_rcert;
+		id = &sa.sa_rauthid;
 	memcpy(id, &store->ca_privkey, sizeof(*id));
 
 	if (ikev2_msg_authsign(env, &sa, &policy.pol_auth, authmsg) != 0) {
@@ -731,15 +771,16 @@ ca_by_subjectpubkey(X509_STORE *ctx, uint8_t *sig, size_t siglen)
 }
 
 X509 *
-ca_by_issuer(X509_STORE *ctx, X509_NAME *subject, struct iked_static_id *id)
+ca_by_issuer(X509_STORE *ctx, X509_NAME *issuer_subject,
+    struct iked_static_id *id)
 {
 	STACK_OF(X509_OBJECT)	*h;
 	X509_OBJECT		*xo;
 	X509			*cert;
 	int			 i;
-	X509_NAME		*issuer;
+	X509_NAME		*cert_issuer, *cert_subject;
 
-	if (subject == NULL)
+	if (issuer_subject == NULL)
 		return (NULL);
 
 	h = ctx->objs;
@@ -749,19 +790,30 @@ ca_by_issuer(X509_STORE *ctx, X509_NAME *subject, struct iked_static_id *id)
 			continue;
 
 		cert = xo->data.x509;
-		if ((issuer = X509_get_issuer_name(cert)) == NULL)
+		/* Don't return self-signed certificates. */
+		cert_subject = X509_get_subject_name(cert);
+		if (cert_subject == NULL)
 			continue;
-		else if (X509_NAME_cmp(subject, issuer) == 0) {
-			switch (id->id_type) {
-			case IKEV2_ID_ASN1_DN:
-				if (ca_x509_subject_cmp(cert, id) == 0)
-					return (cert);
-				break;
-			default:
-				if (ca_x509_subjectaltname_cmp(cert, id) == 0)
-					return (cert);
-				break;
-			}
+		if (X509_NAME_cmp(cert_subject, issuer_subject) == 0)
+			continue;
+		cert_issuer = X509_get_issuer_name(cert);
+		if (cert_issuer == NULL)
+			continue;
+		if (X509_NAME_cmp(cert_issuer, issuer_subject) != 0)
+			continue;
+
+		if (id == NULL)
+			return (cert);
+
+		switch (id->id_type) {
+		case IKEV2_ID_ASN1_DN:
+			if (ca_x509_subject_cmp(cert, id) == 0)
+				return (cert);
+			break;
+		default:
+			if (ca_x509_subjectaltname_cmp(cert, id) == 0)
+				return (cert);
+			break;
 		}
 	}
 
@@ -811,7 +863,7 @@ ca_x509_serialize(X509 *x509)
 	}
 
 	len = BIO_get_mem_data(out, &d);
-	buf = ibuf_new(d, len);
+	buf = ibuf_new_cert(d, len);
 	BIO_free(out);
 
 	return (buf);
@@ -1136,21 +1188,65 @@ ca_validate_cert(struct iked *env, struct iked_static_id *id,
 {
 	struct ca_store	*store = env->sc_priv;
 	X509_STORE_CTX	 csc;
-	BIO		*rawcert = NULL;
-	X509		*cert = NULL;
+	STACK_OF(X509)	*untrusted;
+	X509		*cert;
 	int		 ret = -1, result, error;
 	X509_NAME	*subject;
 	const char	*errstr = "failed";
 
-	if (len == 0) {
+	untrusted = sk_X509_new_null();
+	if (untrusted == NULL) {
+		log_debug("%s: sk_X509_new_null() failed", __func__);
+		return (-1);
+	}
+
+	if (len > 0) {
+		BIO	*buf;
+		X509	*tmp;
+		char	*ptr;
+		size_t	 resid, sz;
+
+		cert = NULL;
+		ptr = data;
+		resid = len;
+		while (resid > sizeof(size_t)) {
+			sz = *(size_t *)(void *)ptr;
+			ptr += sizeof(size_t);
+			resid -= sizeof(size_t);
+			if (sz > resid) {
+				log_debug("%s: corrupted ibuf", __func__);
+				goto done;
+			}
+			/* Convert data to X509 certificate */
+			buf = BIO_new_mem_buf(ptr, sz);
+			if (buf == NULL) {
+				log_debug("%s: BIO_new_mem_buf() failed",
+				    __func__);
+				goto done;
+			}
+			tmp = d2i_X509_bio(buf, NULL);
+			BIO_free(buf);
+			if (tmp == NULL) {
+				log_debug("%s: d2i_X509_bio() failed",
+				    __func__);
+				goto done;
+			}
+			if (cert != NULL) {
+				if (sk_X509_push(untrusted, tmp) == 0) {
+					X509_free(tmp);
+					log_debug("%s: sk_X509_push() failed",
+					    __func__);
+					goto done;
+				}
+			} else
+				cert = tmp;
+			sz = (sz + sizeof(size_t) - 1) & ~(sizeof(size_t) - 1);
+			ptr += sz;
+			resid -= sz;
+		}
+	} else {
 		/* Data is already an X509 certificate */
 		cert = (X509 *)data;
-	} else {
-		/* Convert data to X509 certificate */
-		if ((rawcert = BIO_new_mem_buf(data, len)) == NULL)
-			goto done;
-		if ((cert = d2i_X509_bio(rawcert, NULL)) == NULL)
-			goto done;
 	}
 
 	/* Certificate needs a valid subjectName */
@@ -1160,9 +1256,9 @@ ca_validate_cert(struct iked *env, struct iked_static_id *id,
 	}
 
 	if (id != NULL) {
-		if ((ret = ca_validate_pubkey(env, id, X509_get_pubkey(cert),
-		    0)) == 0) {
-			errstr = "in public key file, ok";
+		ret = ca_validate_pubkey(env, id, X509_get_pubkey(cert), 0);
+		if (ret == 0) {
+			errstr = "ok; in public key file";
 			goto done;
 		}
 
@@ -1183,12 +1279,11 @@ ca_validate_cert(struct iked *env, struct iked_static_id *id,
 	}
 
 	bzero(&csc, sizeof(csc));
-	X509_STORE_CTX_init(&csc, store->ca_cas, cert, NULL);
+	X509_STORE_CTX_init(&csc, store->ca_cas, cert, untrusted);
 	if (store->ca_cas->param->flags & X509_V_FLAG_CRL_CHECK) {
 		X509_STORE_CTX_set_flags(&csc, X509_V_FLAG_CRL_CHECK);
 		X509_STORE_CTX_set_flags(&csc, X509_V_FLAG_CRL_CHECK_ALL);
 	}
-
 	result = X509_verify_cert(&csc);
 	error = csc.error;
 	X509_STORE_CTX_cleanup(&csc);
@@ -1196,7 +1291,6 @@ ca_validate_cert(struct iked *env, struct iked_static_id *id,
 		errstr = X509_verify_cert_error_string(error);
 		goto done;
 	}
-
 	if (!result) {
 		/* XXX should we accept self-signed certificates? */
 		errstr = "rejecting self-signed certificate";
@@ -1208,15 +1302,12 @@ ca_validate_cert(struct iked *env, struct iked_static_id *id,
 	errstr = "ok";
 
  done:
-	if (cert != NULL)
-		log_debug("%s: %s %.100s", __func__, cert->name, errstr);
-
-	if (rawcert != NULL) {
-		BIO_free(rawcert);
-		if (cert != NULL)
+	if (cert != NULL) {
+		log_debug("%s: %s -- %.100s", __func__, cert->name, errstr);
+		if (len > 0)
 			X509_free(cert);
 	}
-
+	sk_X509_pop_free(untrusted, X509_free);
 	return (ret);
 }
 

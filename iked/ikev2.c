@@ -117,6 +117,8 @@ ssize_t	 ikev2_add_transform(struct ibuf *,
 	    uint8_t, uint8_t, uint16_t, uint16_t);
 ssize_t	 ikev2_add_ts(struct ibuf *, struct ikev2_payload **, ssize_t,
 	    struct iked_sa *, int);
+ssize_t	 ikev2_add_certs(struct ibuf *, struct ikev2_payload **, ssize_t,
+	    struct iked_id *, struct iked_ids *);
 ssize_t	 ikev2_add_certreq(struct ibuf *, struct ikev2_payload **, ssize_t,
 	    struct ibuf *, uint8_t);
 ssize_t	 ikev2_add_transportnotify(struct iked *, struct ibuf *,
@@ -134,8 +136,11 @@ int	 ikev2_cp_setaddr(struct iked *, struct iked_sa *, sa_family_t);
 int	 ikev2_cp_fixaddr(struct iked_sa *, struct iked_addr *,
 	    struct iked_addr *);
 
-ssize_t	ikev2_add_sighashnotify(struct ibuf *, struct ikev2_payload **,
+ssize_t	 ikev2_add_sighashnotify(struct ibuf *, struct ikev2_payload **,
 	    ssize_t);
+
+int	 ikev2_save_certs(uint8_t, uint8_t *, size_t, struct iked_id *,
+	    struct iked_ids *);
 
 static struct privsep_proc procs[] = {
 	{ "parent",	PROC_PARENT,	ikev2_dispatch_parent },
@@ -206,8 +211,6 @@ ikev2_dispatch_cert(int fd, struct privsep_proc *p, struct imsg *imsg)
 	uint8_t			 type;
 	uint8_t			*ptr;
 	size_t			 len;
-	struct iked_id		*id = NULL;
-	int			 ignore = 0;
 
 	switch (imsg->hdr.type) {
 	case IMSG_CERTREQ:
@@ -250,42 +253,31 @@ ikev2_dispatch_cert(int fd, struct privsep_proc *p, struct imsg *imsg)
 			log_debug("%s: failed to send ike auth", __func__);
 		break;
 	case IMSG_CERT:
-		if ((sa = ikev2_getimsgdata(env, imsg,
-		    &sh, &type, &ptr, &len)) == NULL) {
+		sa = ikev2_getimsgdata(env, imsg, &sh, &type, &ptr, &len);
+		if (sa == NULL) {
 			log_debug("%s: invalid cert reply", __func__);
+			break;
+		}
+		if (type == IKEV2_CERT_NONE || len == 0) {
+			log_debug("%s: no cert available", __func__);
 			break;
 		}
 
 		/*
-		 * Ignore the message if we already got a valid certificate.
-		 * This might happen if the peer sent multiple CERTREQs.
+		 * Ignore the message if we already have a valid certificate.
+		 * This can happen if the peer sends multiple CERTREQs.
 		 */
-		if (sa->sa_stateflags & IKED_REQ_CERT ||
-		    type == IKEV2_CERT_NONE)
-			ignore = 1;
-
-		log_debug("%s: cert type %s length %zu, %s", __func__,
-		    print_map(type, ikev2_cert_map), len,
-		    ignore ? "ignored" : "ok");
-
-		if (ignore)
-			break;
-
-		if (sh.sh_initiator)
-			id = &sa->sa_icert;
-		else
-			id = &sa->sa_rcert;
-
-		id->id_type = type;
-		id->id_offset = 0;
-		ibuf_release(id->id_buf);
-		id->id_buf = NULL;
-
-		if (len <= 0 || (id->id_buf = ibuf_new(ptr, len)) == NULL) {
-			log_debug("%s: failed to get cert payload",
-			    __func__);
+		if (sa->sa_stateflags & IKED_REQ_CERT) {
+			log_debug("%s: already have a certificate", __func__);
 			break;
 		}
+
+		if (sh.sh_initiator)
+			ikev2_save_certs(type, ptr, len, &sa->sa_iauthid,
+			    &sa->sa_icerts);
+		else
+			ikev2_save_certs(type, ptr, len, &sa->sa_rauthid,
+			    &sa->sa_rcerts);
 
 		sa_stateflags(sa, IKED_REQ_CERT);
 
@@ -293,11 +285,16 @@ ikev2_dispatch_cert(int fd, struct privsep_proc *p, struct imsg *imsg)
 			log_debug("%s: failed to send ike auth", __func__);
 		break;
 	case IMSG_AUTH:
-		if ((sa = ikev2_getimsgdata(env, imsg,
-		    &sh, &type, &ptr, &len)) == NULL) {
+		sa = ikev2_getimsgdata(env, imsg, &sh, &type, &ptr, &len);
+		if (sa == NULL) {
 			log_debug("%s: invalid auth reply", __func__);
 			break;
 		}
+		if (type == IKEV2_AUTH_NONE || len == 0) {
+			log_debug("%s: no auth available", __func__);
+			break;
+		}
+
 		if (sa_stateok(sa, IKEV2_STATE_VALID)) {
 			log_warnx("%s: ignoring AUTH in state %s", __func__,
 			    print_map(sa->sa_state, ikev2_state_map));
@@ -306,18 +303,13 @@ ikev2_dispatch_cert(int fd, struct privsep_proc *p, struct imsg *imsg)
 
 		log_debug("%s: AUTH type %d len %zu", __func__, type, len);
 
-		id = &sa->sa_localauth;
-		id->id_type = type;
-		id->id_offset = 0;
-		ibuf_release(id->id_buf);
-
-		if (type != IKEV2_AUTH_NONE) {
-			if (len <= 0 ||
-			    (id->id_buf = ibuf_new(ptr, len)) == NULL) {
-				log_debug("%s: failed to get auth payload",
-				    __func__);
-				break;
-			}
+		sa->sa_localauth.id_type = type;
+		sa->sa_localauth.id_offset = 0;
+		ibuf_release(sa->sa_localauth.id_buf);
+		sa->sa_localauth.id_buf = ibuf_new(ptr, len);
+		if (sa->sa_localauth.id_buf == NULL) {
+			log_debug("%s: failed to get auth payload", __func__);
+			break;
 		}
 
 		sa_stateflags(sa, IKED_REQ_AUTH);
@@ -499,7 +491,8 @@ int
 ikev2_ike_auth_recv(struct iked *env, struct iked_sa *sa,
     struct iked_message *msg)
 {
-	struct iked_id		*id, *certid;
+	struct iked_id		*id, *authid;
+	struct iked_ids		*certids;
 	struct ibuf		*authmsg;
 	struct iked_auth	 ikeauth;
 	struct iked_policy	*policy = sa->sa_policy;
@@ -507,11 +500,14 @@ ikev2_ike_auth_recv(struct iked *env, struct iked_sa *sa,
 
 	if (sa->sa_hdr.sh_initiator) {
 		id = &sa->sa_rid;
-		certid = &sa->sa_rcert;
+		authid = &sa->sa_rauthid;
+		certids = &sa->sa_rcerts;
 	} else {
 		id = &sa->sa_iid;
-		certid = &sa->sa_icert;
+		authid = &sa->sa_iauthid;
+		certids = &sa->sa_icerts;
 	}
+
 	/* try to relookup the policy based on the peerid */
 	if (msg->msg_id.id_type && !sa->sa_hdr.sh_initiator) {
 		struct iked_policy	*old = sa->sa_policy;
@@ -548,13 +544,16 @@ ikev2_ike_auth_recv(struct iked *env, struct iked_sa *sa,
 	}
 
 	if (msg->msg_cert.id_type) {
-		memcpy(certid, &msg->msg_cert, sizeof(*certid));
-		bzero(&msg->msg_cert, sizeof(msg->msg_cert));
+		ikev2_save_certs(msg->msg_cert.id_type,
+		    ibuf_data(msg->msg_cert.id_buf),
+		    ibuf_length(msg->msg_cert.id_buf), authid, certids);
 
-		ca_setcert(env, &sa->sa_hdr,
-		    id, certid->id_type,
-		    ibuf_data(certid->id_buf),
-		    ibuf_length(certid->id_buf), PROC_CERT);
+		ca_setcert(env, &sa->sa_hdr, id, msg->msg_cert.id_type,
+		    ibuf_data(msg->msg_cert.id_buf),
+		    ibuf_length(msg->msg_cert.id_buf), PROC_CERT);
+
+		ibuf_release(msg->msg_cert.id_buf);
+		bzero(&msg->msg_cert, sizeof(msg->msg_cert));
 	}
 
 	if (msg->msg_auth.id_type) {
@@ -1062,9 +1061,8 @@ ikev2_init_ike_auth(struct iked *env, struct iked_sa *sa)
 {
 	struct iked_policy		*pol = sa->sa_policy;
 	struct ikev2_payload		*pld;
-	struct ikev2_cert		*cert;
 	struct ikev2_auth		*auth;
-	struct iked_id			*id, *certid;
+	struct iked_id			*id;
 	struct ibuf			*e = NULL;
 	uint8_t				 firstpayload;
 	int				 ret = -1;
@@ -1083,7 +1081,6 @@ ikev2_init_ike_auth(struct iked *env, struct iked_sa *sa)
 		goto done;
 
 	id = &sa->sa_iid;
-	certid = &sa->sa_icert;
 
 	/* ID payload */
 	if ((pld = ikev2_add_payload(e)) == NULL)
@@ -1093,30 +1090,25 @@ ikev2_init_ike_auth(struct iked *env, struct iked_sa *sa)
 		goto done;
 	len = ibuf_size(id->id_buf);
 
-	/* CERT payload */
+	/* CERT payloads */
 	if ((sa->sa_stateinit & IKED_REQ_CERT) &&
-	    (certid->id_type != IKEV2_CERT_NONE)) {
-		if (ikev2_next_payload(pld, len,
-		    IKEV2_PAYLOAD_CERT) == -1)
+	    sa->sa_iauthid.id_type != IKEV2_CERT_NONE) {
+		len = ikev2_add_certs(e, &pld, len, &sa->sa_iauthid,
+		    &sa->sa_icerts);
+		if (len == -1)
 			goto done;
-		if ((pld = ikev2_add_payload(e)) == NULL)
-			goto done;
-		if ((cert = ibuf_advance(e, sizeof(*cert))) == NULL)
-			goto done;
-		cert->cert_type = certid->id_type;
-		if (ibuf_cat(e, certid->id_buf) != 0)
-			goto done;
-		len = ibuf_size(certid->id_buf) + sizeof(*cert);
 
 		/* CERTREQ payload(s) */
-		if ((len = ikev2_add_certreq(e, &pld,
-		    len, env->sc_certreq, env->sc_certreqtype)) == -1)
+		len = ikev2_add_certreq(e, &pld, len, env->sc_certreq,
+		    env->sc_certreqtype);
+		if (len == -1)
 			goto done;
-
-		if (env->sc_certreqtype != pol->pol_certreqtype &&
-		    (len = ikev2_add_certreq(e, &pld,
-		    len, NULL, pol->pol_certreqtype)) == -1)
-			goto done;
+		if (env->sc_certreqtype != pol->pol_certreqtype) {
+			len = ikev2_add_certreq(e, &pld, len, NULL,
+			    pol->pol_certreqtype);
+			if (len == -1)
+				goto done;
+		}
 	}
 
 	if (ikev2_next_payload(pld, len, IKEV2_PAYLOAD_AUTH) == -1)
@@ -1509,6 +1501,52 @@ ikev2_add_ts(struct ibuf *e, struct ikev2_payload **pld, ssize_t len,
 	return (len);
 }
 
+ssize_t
+ikev2_add_certs(struct ibuf *e, struct ikev2_payload **pld, ssize_t len,
+    struct iked_id *authid, struct iked_ids *certids)
+{
+	struct ikev2_cert	*cert;
+	struct iked_id		*id;
+	int			 i, rv;
+
+	rv = ikev2_next_payload(*pld, len, IKEV2_PAYLOAD_CERT);
+	if (rv == -1)
+		return (-1);
+	/* CERT payload */
+	*pld = ikev2_add_payload(e);
+	if (*pld == NULL)
+		return (-1);
+	cert = ibuf_advance(e, sizeof(*cert));
+	if (cert == NULL)
+		return (-1);
+	cert->cert_type = authid->id_type;
+	rv = ibuf_cat(e, authid->id_buf);
+	if (rv == -1)
+		return (-1);
+	len = ibuf_size(authid->id_buf) + sizeof(*cert);
+
+	/* Intermediate certificates */
+	for (i = 0; i < certids->nids; i++) {
+		id = &certids->ids[i];
+		rv = ikev2_next_payload(*pld, len, IKEV2_PAYLOAD_CERT);
+		if (rv == -1)
+			return (-1);
+		/* CERT payload */
+		*pld = ikev2_add_payload(e);
+		if (*pld == NULL)
+			return (-1);
+		cert = ibuf_advance(e, sizeof(*cert));
+		if (cert == NULL)
+			return (-1);
+		cert->cert_type = id->id_type;
+		rv = ibuf_cat(e, id->id_buf);
+		if (rv == -1)
+			return (-1);
+		len = ibuf_size(id->id_buf) + sizeof(*cert);
+	}
+
+	return (len);
+}
 
 ssize_t
 ikev2_add_certreq(struct ibuf *e, struct ikev2_payload **pld, ssize_t len,
@@ -2330,9 +2368,9 @@ ikev2_resp_ike_auth(struct iked *env, struct iked_sa *sa)
 {
 	struct ikev2_payload		*pld;
 	struct ikev2_notify		*n;
-	struct ikev2_cert		*cert;
 	struct ikev2_auth		*auth;
-	struct iked_id			*id, *certid;
+	struct iked_id			*id, *authid;
+	struct iked_ids			*certids;
 	struct ibuf			*e = NULL;
 	uint8_t				 firstpayload;
 	int				 ret = -1;
@@ -2381,10 +2419,12 @@ ikev2_resp_ike_auth(struct iked *env, struct iked_sa *sa)
 
 	if (sa->sa_hdr.sh_initiator) {
 		id = &sa->sa_iid;
-		certid = &sa->sa_icert;
+		authid = &sa->sa_iauthid;
+		certids = &sa->sa_icerts;
 	} else {
 		id = &sa->sa_rid;
-		certid = &sa->sa_rcert;
+		authid = &sa->sa_rauthid;
+		certids = &sa->sa_rcerts;
 	}
 
 	if (sa->sa_state != IKEV2_STATE_EAP_VALID) {
@@ -2396,21 +2436,12 @@ ikev2_resp_ike_auth(struct iked *env, struct iked_sa *sa)
 			goto done;
 		len = ibuf_size(id->id_buf);
 
-		/* CERT payload */
+		/* CERT payload(s) */
 		if ((sa->sa_statevalid & IKED_REQ_CERT) &&
-		    (certid->id_type != IKEV2_CERT_NONE)) {
-			if (ikev2_next_payload(pld, len,
-			    IKEV2_PAYLOAD_CERT) == -1)
+		    authid->id_type != IKEV2_CERT_NONE) {
+			len = ikev2_add_certs(e, &pld, len, authid, certids);
+			if (len == -1)
 				goto done;
-
-			if ((pld = ikev2_add_payload(e)) == NULL)
-				goto done;
-			if ((cert = ibuf_advance(e, sizeof(*cert))) == NULL)
-				goto done;
-			cert->cert_type = certid->id_type;
-			if (ibuf_cat(e, certid->id_buf) != 0)
-				goto done;
-			len = ibuf_size(certid->id_buf) + sizeof(*cert);
 		}
 
 		if (ikev2_next_payload(pld, len, IKEV2_PAYLOAD_AUTH) == -1)
@@ -2490,9 +2521,8 @@ int
 ikev2_resp_ike_eap(struct iked *env, struct iked_sa *sa, struct ibuf *eapmsg)
 {
 	struct ikev2_payload		*pld;
-	struct ikev2_cert		*cert;
 	struct ikev2_auth		*auth;
-	struct iked_id			*id, *certid;
+	struct iked_id			*id;
 	struct ibuf			*e = NULL;
 	uint8_t				 firstpayload;
 	int				 ret = -1;
@@ -2511,7 +2541,6 @@ ikev2_resp_ike_eap(struct iked *env, struct iked_sa *sa, struct ibuf *eapmsg)
 		goto done;
 
 	id = &sa->sa_rid;
-	certid = &sa->sa_rcert;
 
 	/* ID payload */
 	if ((pld = ikev2_add_payload(e)) == NULL)
@@ -2522,19 +2551,11 @@ ikev2_resp_ike_eap(struct iked *env, struct iked_sa *sa, struct ibuf *eapmsg)
 	len = ibuf_size(id->id_buf);
 
 	if ((sa->sa_statevalid & IKED_REQ_CERT) &&
-	    (certid->id_type != IKEV2_CERT_NONE)) {
-		if (ikev2_next_payload(pld, len, IKEV2_PAYLOAD_CERT) == -1)
+	    sa->sa_rauthid.id_type != IKEV2_CERT_NONE) {
+		len = ikev2_add_certs(e, &pld, len, &sa->sa_rauthid,
+		    &sa->sa_rcerts);
+		if (len == -1)
 			goto done;
-
-		/* CERT payload */
-		if ((pld = ikev2_add_payload(e)) == NULL)
-			goto done;
-		if ((cert = ibuf_advance(e, sizeof(*cert))) == NULL)
-			goto done;
-		cert->cert_type = certid->id_type;
-		if (ibuf_cat(e, certid->id_buf) != 0)
-			goto done;
-		len = ibuf_size(certid->id_buf) + sizeof(*cert);
 	}
 
 	if (ikev2_next_payload(pld, len, IKEV2_PAYLOAD_AUTH) == -1)
@@ -5468,5 +5489,52 @@ ikev2_cp_fixaddr(struct iked_sa *sa, struct iked_addr *addr,
 		memcpy(patched, sa->sa_addrpool6, sizeof(*patched));
 		break;
 	}
+	return (0);
+}
+
+int
+ikev2_save_certs(uint8_t type, uint8_t *ptr, size_t len, struct iked_id *auth,
+    struct iked_ids *certs)
+{
+	struct iked_id	*id;
+	size_t		 ofs, sz;
+	int		 i, ncerts;
+
+	/* Determine the number of certificates. */
+	ncerts = 0;
+	ofs = 0;
+	while (ofs < len) {
+		sz = *(size_t *)(void *)(ptr + ofs);
+		ncerts++;
+		sz = (sz + sizeof(size_t) - 1) & ~(sizeof(size_t) - 1);
+		ofs += sizeof(size_t) + sz;
+	}
+
+	log_debug("%s: %d-certificate chain of type %s (length %zu)",
+	    __func__, ncerts, print_map(type, ikev2_cert_map), len);
+
+	ibuf_release(auth->id_buf);
+	memset(auth, 0, sizeof(*auth));
+	for (i = 0; i < certs->nids; i++)
+		ibuf_release(certs->ids[i].id_buf);
+	free(certs->ids);
+	memset(certs, 0, sizeof(*certs));
+
+	if (ncerts > 1) {
+		certs->nids = ncerts - 1;
+		certs->ids = calloc(certs->nids, sizeof(struct iked_id));
+	}
+
+	ofs = 0;
+	for (i = 0; i < ncerts; i++) {
+		sz = *(size_t *)(void *)(ptr + ofs);
+		ofs += sizeof(long);
+		id = (i == 0) ? auth : &certs->ids[i - 1];
+		id->id_type = type;
+		id->id_buf = ibuf_new(ptr + ofs, sz);
+		sz = (sz + sizeof(size_t) - 1) & ~(sizeof(size_t) - 1);
+		ofs += sz;
+	}
+
 	return (0);
 }

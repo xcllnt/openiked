@@ -857,7 +857,7 @@ ikev2_pld_cert(struct iked *env, struct ikev2_payload *pld,
 	struct ikev2_cert		 cert;
 	uint8_t				*buf;
 	size_t				 len;
-	struct iked_id			*certid;
+	struct iked_id			*id;
 	uint8_t				*msgbuf = ibuf_data(msg->msg_data);
 
 	if (ikev2_validate_cert(msg, offset, left, pld, &cert))
@@ -875,23 +875,34 @@ ikev2_pld_cert(struct iked *env, struct ikev2_payload *pld,
 	if (!ikev2_msg_frompeer(msg))
 		return (0);
 
-	certid = &msg->msg_parent->msg_cert;
-	if (certid->id_type) {
-		if (cert.cert_type != certid->id_type) {
+	id = &msg->msg_parent->msg_cert;
+	if (id->id_type) {
+		struct ibuf	*tmp;
+		int		 rv;
+
+		if (cert.cert_type != id->id_type) {
 			log_debug("%s: duplicate cert payload", __func__);
 			return (-1);
 		}
-		if (ibuf_add(certid->id_buf, buf, len) != 0) {
+		tmp = ibuf_new_cert(buf, len);
+		if (tmp == NULL) {
+			log_debug("%s: failed to build cert chain", __func__);
+			return (-1);
+		}
+		rv = ibuf_cat(id->id_buf, tmp);
+		ibuf_release(tmp);
+		if (rv != 0) {
 			log_debug("%s: failed to build cert chain", __func__);
 			return (-1);
 		}
 	} else {
-		if ((certid->id_buf = ibuf_new(buf, len)) == NULL) {
+		id->id_buf = ibuf_new_cert(buf, len);
+		if (id->id_buf == NULL) {
 			log_debug("%s: failed to save cert", __func__);
 			return (-1);
 		}
-		certid->id_type = cert.cert_type;
-		certid->id_offset = 0;
+		id->id_type = cert.cert_type;
+		id->id_offset = 0;
 	}
 	return (0);
 }

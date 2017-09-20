@@ -195,6 +195,8 @@ config_free_kex(struct iked_kex *kex)
 void
 config_free_sa(struct iked *env, struct iked_sa *sa)
 {
+	int	i;
+
 	timer_del(env, &sa->sa_timer);
 	timer_del(env, &sa->sa_rekey);
 
@@ -244,8 +246,15 @@ config_free_sa(struct iked *env, struct iked_sa *sa)
 
 	ibuf_release(sa->sa_iid.id_buf);
 	ibuf_release(sa->sa_rid.id_buf);
-	ibuf_release(sa->sa_icert.id_buf);
-	ibuf_release(sa->sa_rcert.id_buf);
+	ibuf_release(sa->sa_iauthid.id_buf);
+	ibuf_release(sa->sa_rauthid.id_buf);
+
+	for (i = 0; i < sa->sa_icerts.nids; i++)
+		ibuf_release(sa->sa_icerts.ids[i].id_buf);
+	free(sa->sa_icerts.ids);
+	for (i = 0; i < sa->sa_rcerts.nids; i++)
+		ibuf_release(sa->sa_rcerts.ids[i].id_buf);
+	free(sa->sa_rcerts.ids);
 
 	ibuf_release(sa->sa_eap.id_buf);
 	free(sa->sa_eapid);

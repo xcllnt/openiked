@@ -327,6 +327,11 @@ struct iked_id {
 	struct ibuf	*id_buf;
 };
 
+struct iked_ids {
+	struct iked_id	*ids;
+	int		 nids;
+};
+
 #define IKED_REQ_CERT		0x0001	/* get local certificate (if required) */
 #define IKED_REQ_CERTVALID	0x0002	/* validated the peer cert */
 #define IKED_REQ_CERTREQ	0x0004	/* CERTREQ has been received */
@@ -417,10 +422,14 @@ struct iked_sa {
 
 	struct iked_id			 sa_iid;	/* initiator id */
 	struct iked_id			 sa_rid;	/* responder id */
-	struct iked_id			 sa_icert;	/* initiator cert */
-	struct iked_id			 sa_rcert;	/* responder cert */
 #define IKESA_SRCID(x) ((x)->sa_hdr.sh_initiator ? &(x)->sa_iid : &(x)->sa_rid)
 #define IKESA_DSTID(x) ((x)->sa_hdr.sh_initiator ? &(x)->sa_rid : &(x)->sa_iid)
+
+	/* Certificates */
+	struct iked_id			  sa_iauthid;	/* initiator cert */
+	struct iked_id			  sa_rauthid;	/* responder cert */
+	struct iked_ids			  sa_icerts;	/* initiator chain */
+	struct iked_ids			  sa_rcerts;	/* responder chain */
 
 	char				*sa_eapid;	/* EAP identity */
 	struct iked_id			 sa_eap;	/* EAP challenge */
@@ -960,6 +969,8 @@ void	 print_verbose(const char *, ...)
 /* imsg_util.c */
 struct ibuf *
 	 ibuf_new(void *, size_t);
+struct ibuf *
+	 ibuf_new_cert(void *, size_t);
 struct ibuf *
 	 ibuf_static(void);
 int	 ibuf_cat(struct ibuf *, struct ibuf *);
