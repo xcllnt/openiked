@@ -424,19 +424,19 @@ recvfromto(int s, void *buf, size_t len, int flags, struct sockaddr *from,
 	    cmsg = CMSG_NXTHDR(&msg, cmsg)) {
 		switch (from->sa_family) {
 		case AF_INET:
-#if HAVE_DECL_IP_RECVDSTADDR
+#if HAVE_DECL_IP_RECVORIGDSTADDR
+			if (cmsg->cmsg_level == IPPROTO_IP &&
+			    cmsg->cmsg_type == IP_RECVORIGDSTADDR) {
+				memcpy(to, CMSG_DATA(cmsg),
+				    sizeof(struct sockaddr_in));
+			}
+#elif HAVE_DECL_IP_RECVDSTADDR
 			if (cmsg->cmsg_level == IPPROTO_IP &&
 			    cmsg->cmsg_type == IP_RECVDSTADDR) {
 				to->sa_family = AF_INET;
 				SET_SA_LEN(to, sizeof(struct sockaddr_in));
 				memcpy(&((struct sockaddr_in *)to)->sin_addr,
 				    CMSG_DATA(cmsg), sizeof(struct in_addr));
-			}
-#elif HAVE_DECL_IP_RECVORIGDSTADDR
-			if (cmsg->cmsg_level == IPPROTO_IP &&
-			    cmsg->cmsg_type == IP_RECVORIGDSTADDR) {
-				memcpy(to, CMSG_DATA(cmsg),
-				    sizeof(struct sockaddr_in));
 			}
 #endif
 			break;
