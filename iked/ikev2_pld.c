@@ -877,26 +877,35 @@ ikev2_pld_cert(struct iked *env, struct ikev2_payload *pld,
 
 	id = &msg->msg_parent->msg_cert;
 	if (id->id_type) {
-		struct ibuf	*tmp;
 		int		 rv;
 
 		if (cert.cert_type != id->id_type) {
 			log_debug("%s: duplicate cert payload", __func__);
 			return (-1);
 		}
-		tmp = ibuf_new_cert(buf, len);
-		if (tmp == NULL) {
-			log_debug("%s: failed to build cert chain", __func__);
-			return (-1);
-		}
-		rv = ibuf_cat(id->id_buf, tmp);
-		ibuf_release(tmp);
+		if (id->id_type == IKEV2_CERT_X509_CERT) {
+			struct ibuf	*tmp;
+
+			tmp = ibuf_new_cert(buf, len);
+			if (tmp == NULL) {
+				log_debug("%s: failed to build cert chain",
+				    __func__);
+				return (-1);
+			}
+			rv = ibuf_cat(id->id_buf, tmp);
+			ibuf_release(tmp);
+		} else
+			rv = ibuf_add(id->id_buf, buf, len);
+
 		if (rv != 0) {
 			log_debug("%s: failed to build cert chain", __func__);
 			return (-1);
 		}
 	} else {
-		id->id_buf = ibuf_new_cert(buf, len);
+		if (cert.cert_type == IKEV2_CERT_X509_CERT)
+			id->id_buf = ibuf_new_cert(buf, len);
+		else
+			id->id_buf = ibuf_new(buf, len);
 		if (id->id_buf == NULL) {
 			log_debug("%s: failed to save cert", __func__);
 			return (-1);

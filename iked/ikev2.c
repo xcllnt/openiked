@@ -5500,18 +5500,21 @@ ikev2_save_certs(uint8_t type, uint8_t *ptr, size_t len, struct iked_id *auth,
 	size_t		 ofs, sz;
 	int		 i, ncerts;
 
-	/* Determine the number of certificates. */
-	ncerts = 0;
-	ofs = 0;
-	while (ofs < len) {
-		sz = *(size_t *)(void *)(ptr + ofs);
-		ncerts++;
-		sz = (sz + sizeof(size_t) - 1) & ~(sizeof(size_t) - 1);
-		ofs += sizeof(size_t) + sz;
-	}
+	if (type == IKEV2_CERT_X509_CERT) {
+		/* Determine the number of certificates. */
+		ncerts = 0;
+		ofs = 0;
+		while (ofs < len) {
+			sz = *(size_t *)(void *)(ptr + ofs);
+			ncerts++;
+			sz = (sz + sizeof(size_t) - 1) & ~(sizeof(size_t) - 1);
+			ofs += sizeof(size_t) + sz;
+		}
 
-	log_debug("%s: %d-certificate chain of type %s (length %zu)",
-	    __func__, ncerts, print_map(type, ikev2_cert_map), len);
+		log_debug("%s: %d-certificate chain of type %s (length %zu)",
+		    __func__, ncerts, print_map(type, ikev2_cert_map), len);
+	} else
+		ncerts = 1;
 
 	ibuf_release(auth->id_buf);
 	memset(auth, 0, sizeof(*auth));
@@ -5527,8 +5530,11 @@ ikev2_save_certs(uint8_t type, uint8_t *ptr, size_t len, struct iked_id *auth,
 
 	ofs = 0;
 	for (i = 0; i < ncerts; i++) {
-		sz = *(size_t *)(void *)(ptr + ofs);
-		ofs += sizeof(long);
+		if (type == IKEV2_CERT_X509_CERT) {
+			sz = *(size_t *)(void *)(ptr + ofs);
+			ofs += sizeof(size_t);
+		} else
+			sz = len;
 		id = (i == 0) ? auth : &certs->ids[i - 1];
 		id->id_type = type;
 		id->id_buf = ibuf_new(ptr + ofs, sz);
