@@ -236,7 +236,7 @@ eap_mschap(struct iked *env, struct iked_sa *sa, struct eap_message *eap)
 		    msp->msp_challenge, usr->usr_name, strlen(usr->usr_name),
 		    pass, passlen, ntresponse) == -1) {
 			free(pass);
-			rerurn (-1);
+			return (-1);
 		}
 
 		if (memcmp(ntresponse, msp->msp_ntresponse,
