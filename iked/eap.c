@@ -232,9 +232,12 @@ eap_mschap(struct iked *env, struct iked_sa *sa, struct eap_message *eap)
 			return (-1);
 
 		msp = &msr->msr_response.resp_peer;
-		mschap_nt_response(ibuf_data(sa->sa_eap.id_buf),
+		if (mschap_nt_response(ibuf_data(sa->sa_eap.id_buf),
 		    msp->msp_challenge, usr->usr_name, strlen(usr->usr_name),
-		    pass, passlen, ntresponse);
+		    pass, passlen, ntresponse) == -1) {
+			free(pass);
+			rerurn (-1);
+		}
 
 		if (memcmp(ntresponse, msp->msp_ntresponse,
 		    sizeof(ntresponse)) != 0) {
@@ -247,21 +250,27 @@ eap_mschap(struct iked *env, struct iked_sa *sa, struct eap_message *eap)
 		}
 
 		bzero(&successmsg, sizeof(successmsg));
-		mschap_auth_response(pass, passlen,
+		if (mschap_auth_response(pass, passlen,
 		    ntresponse, ibuf_data(sa->sa_eap.id_buf),
 		    msp->msp_challenge, usr->usr_name, strlen(usr->usr_name),
-		    successmsg);
+		    successmsg) == -1) {
+			free(pass);
+			return (-1);
+		}
 		if ((sa->sa_eapmsk = ibuf_new(NULL, MSCHAP_MSK_SZ)) == NULL) {
 			log_debug("%s: failed to get MSK", __func__);
 			free(pass);
 			return (-1);
 		}
-		mschap_msk(pass, passlen, ntresponse,
-		    ibuf_data(sa->sa_eapmsk));
+		if (mschap_msk(pass, passlen, ntresponse,
+		    ibuf_data(sa->sa_eapmsk)) == -1) {
+			free(pass);
+			return (-1);
+		}
+
 		free(pass);
 
 		log_info("%s: '%s' authenticated", __func__, usr->usr_name);
-
 
 		if ((eapmsg = ibuf_static()) == NULL)
 			return (-1);
