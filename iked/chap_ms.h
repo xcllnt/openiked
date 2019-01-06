@@ -29,19 +29,11 @@
 
 #define MSCHAP_MAXNTPASSWORD_SZ	255	/* unicode chars */
 
-void	 mschap_nt_response(uint8_t *, uint8_t *, uint8_t *, int,
+int	 mschap_nt_response(uint8_t *, uint8_t *, uint8_t *, int,
 	    uint8_t *, int , uint8_t *);
-void	 mschap_auth_response(uint8_t *, int, uint8_t *, uint8_t *,
+int	 mschap_auth_response(uint8_t *, int, uint8_t *, uint8_t *,
 	    uint8_t *, uint8_t *, int, uint8_t *);
 
-void	 mschap_ntpassword_hash(uint8_t *, int, uint8_t *);
-void	 mschap_challenge_hash(uint8_t *, uint8_t *, uint8_t *,
-	    int, uint8_t *);
-
-void	 mschap_asymetric_startkey(uint8_t *, uint8_t *, int, int, int);
-void	 mschap_masterkey(uint8_t *, uint8_t *, uint8_t *);
-void	 mschap_radiuskey(uint8_t *, const uint8_t *, const uint8_t *,
-	    const uint8_t *);
-void	 mschap_msk(uint8_t *, int, uint8_t *, uint8_t *);
+int	 mschap_msk(uint8_t *, int, uint8_t *, uint8_t *);
 
 #endif /* CHAP_MS_H */
