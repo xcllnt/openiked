@@ -20,10 +20,14 @@ ylwrap
 */Makefile.in
 
 ikectl/ikectl
+ikectl/ikectl.8.out
 
 iked/.dirstamp
 iked/eap_map.c
 iked/iked
+iked/iked.8.out
+iked/iked.conf.5.out
+iked/iked.conf.out
 iked/ikev2_map.c
 iked/libcurve25519.a
 iked/libpfkey.a
