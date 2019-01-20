@@ -41,15 +41,14 @@ $(iked_MAPS): genmap.sh $(iked_MAPS_IN)
 
 $(MANPAGES): $(MANPAGES_IN)
 	case "$(MANTYPE)" in \
-	cat)	$(FIXPATHSCMD) $(MANPAGES_IN) | mandoc > $@;; \
-	doc)	$(FIXPATHSCMD) $(MANPAGES_IN) > $@;; \
-	man)	$(FIXPATHSCMD) $(MANPAGES_IN) | \
+	cat)	$(FIXPATHSCMD) $(@:.out=) | mandoc > $@;; \
+	doc)	$(FIXPATHSCMD) $(@:.out=) > $@;; \
+	man)	$(FIXPATHSCMD) $(@:.out=) | \
 		    $(AWK) -f $(top_srcdir)/mdoc2man.awk > $@;; \
 	esac
 
 $(CONFIGFILES): $(CONFIGFILES_IN)
-	conffile=`echo $@ | sed 's/.out$$//'`; \
-	$(FIXPATHSCMD) $(srcdir)/$${conffile} > $@
+	$(FIXPATHSCMD) $(srcdir)/$(@:.out=) > $@
 
 install-exec-hook: $(CONFIGFILES) $(MANPAGES)
 	$(INSTALL) -d $(DESTDIR)$(sysconfdir)/iked/
