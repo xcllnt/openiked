@@ -40,12 +40,12 @@ $(iked_MAPS): genmap.sh $(iked_MAPS_IN)
 	@touch $@
 
 $(MANPAGES): $(MANPAGES_IN)
-	if test "$(MANTYPE)" = "man"; then \
-		$(FIXPATHSCMD) $(MANPAGES_IN) | \
-		    $(AWK) -f $(top_srcdir)/mdoc2man.awk > $@; \
-	else \
-		$(FIXPATHSCMD) $(MANPAGES_IN) > $@; \
-	fi
+	case "$(MANTYPE)" in \
+	cat)	$(FIXPATHSCMD) $(MANPAGES_IN) | mandoc > $@;; \
+	doc)	$(FIXPATHSCMD) $(MANPAGES_IN) > $@;; \
+	man)	$(FIXPATHSCMD) $(MANPAGES_IN) | \
+		    $(AWK) -f $(top_srcdir)/mdoc2man.awk > $@;; \
+	esac
 
 $(CONFIGFILES): $(CONFIGFILES_IN)
 	conffile=`echo $@ | sed 's/.out$$//'`; \
