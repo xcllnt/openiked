@@ -15,7 +15,7 @@
 
 AC_INIT([OpenIKED],
         m4_esyscmd([git log --pretty=format:'(%h)' -n 1]),
-        [Marcel Moolenaar <marcel@brkt.com>])
+        [Marcel Moolenaar <marcel@FreeBSD.org>])
 AC_LANG([C])
 AC_CONFIG_MACRO_DIR([m4])
 

@@ -6,7 +6,7 @@ CERT_L			= Mountain View
 CERT_O			= OpenIKED
 CERT_OU			= iked
 CERT_CN			=
-CERT_EMAIL		= marcel@brkt.com
+CERT_EMAIL		= marcel@FreeBSD.org
 
 # default settings
 CERTPATHLEN		= 1

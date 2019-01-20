@@ -88,7 +88,7 @@ enabled in the default GENERIC kernel.  You have to compile a custom
 kernel and enable options like `IPSEC`.  Please refer to the
 individual documentation for details, for example:
 
-* http://www.freebsd.org/doc/en_US.ISO8859-1/books/handbook/ipsec.html
+* http://www.FreeBSD.org/doc/en_US.ISO8859-1/books/handbook/ipsec.html
 * http://www.netbsd.org/docs/network/ipsec/#config_kernel
 
 Development
@@ -120,7 +120,7 @@ Please also note that each line should be at most 80 characters long.
 Authors
 -------
 
-* Marcel Moolenaar <marcel@brkt.com>
+* Marcel Moolenaar <marcel@FreeBSD.org>
 * Reyk Floeter <reyk@openbsd.org>
 * Mike Belopuhov <mikeb@openbsd.org>
 

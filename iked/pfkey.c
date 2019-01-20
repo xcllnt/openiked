@@ -1,7 +1,7 @@
 /*	$OpenBSD: pfkey.c,v 1.52 2016/09/03 09:20:07 vgross Exp $	*/
 
 /*
- * Copyright (c) 2016 Marcel Moolenaar <marcel@brkt.com>
+ * Copyright (c) 2016 Marcel Moolenaar <marcel@FreeBSD.org>
  * Copyright (c) 2010-2013 Reyk Floeter <reyk@openbsd.org>
  * Copyright (c) 2004, 2005 Hans-Joerg Hoexer <hshoexer@openbsd.org>
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
