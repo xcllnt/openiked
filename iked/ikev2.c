@@ -50,7 +50,7 @@
 static inline EVP_MD_CTX *
 EVP_MD_CTX_new(void)
 {
-	return (malloc(sizeof(EVP_MD_CTX)));
+	return (calloc(1, sizeof(EVP_MD_CTX)));
 }
 
 static inline void
