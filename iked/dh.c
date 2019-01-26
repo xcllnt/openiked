@@ -25,6 +25,21 @@
 #include <openssl/ecdh.h>
 #include <openssl/bn.h>
 
+#if OPENSSL_VERSION_NUMBER < 0x10100000
+static inline void
+DH_get0_key(const DH *dh, const BIGNUM **pub_key, const BIGNUM **priv_key)
+{
+	*pub_key = dh->pub_key;
+}
+
+static inline void
+DH_set0_pqg(DH *dh, BIGNUM *p, BIGNUM *q, BIGNUM *g)
+{
+	dh->p = p;
+	dh->g = g;
+}
+#endif
+
 #include "defines.h"
 #include "dh.h"
 

@@ -42,6 +42,20 @@
 #include <openssl/md5.h>
 #include <openssl/sha.h>
 
+#if OPENSSL_VERSION_NUMBER < 0x10100000
+static inline EVP_MD_CTX *
+EVP_MD_CTX_new(void)
+{
+	return (malloc(sizeof(EVP_MD_CTX)));
+}
+
+static inline void
+EVP_MD_CTX_free(EVP_MD_CTX *ctx)
+{
+	free(ctx);
+}
+#endif
+
 #include "chap_ms.h"
 
 /*

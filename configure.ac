@@ -1889,7 +1889,8 @@ AC_RUN_IFELSE(
 	if(fd == NULL)
 		exit(1);
 
-	if ((rc = fprintf(fd ,"%x (%s)\n", OPENSSL_VERSION_NUMBER, OPENSSL_VERSION_TEXT)) <0)
+	if ((rc = fprintf(fd, "%lx (%s)\n", OPENSSL_VERSION_NUMBER,
+	    OPENSSL_VERSION_TEXT)) < 0)
 		exit(1);
 
 	exit(0);
@@ -1916,6 +1917,12 @@ AC_RUN_IFELSE(
 #include <openssl/opensslv.h>
 #include <openssl/crypto.h>
 #define DATA "conftest.ssllibver"
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000
+#define	OpenSSL_version_num	SSLeay
+#define	OpenSSL_version		SSLeay_version
+#define	OPENSSL_VERSION		SSLEAY_VERSION
+#endif
 	]], [[
 	FILE *fd;
 	int rc;
@@ -1924,7 +1931,8 @@ AC_RUN_IFELSE(
 	if(fd == NULL)
 		exit(1);
 
-	if ((rc = fprintf(fd ,"%x (%s)\n", OpenSSL_version_num(), OpenSSL_version(OPENSSL_VERSION))) <0)
+	if ((rc = fprintf(fd, "%lx (%s)\n", OpenSSL_version_num(),
+	    OpenSSL_version(OPENSSL_VERSION))) < 0)
 		exit(1);
 
 	exit(0);
@@ -1956,6 +1964,11 @@ AC_RUN_IFELSE(
 	[AC_LANG_PROGRAM([[
 #include <string.h>
 #include <openssl/opensslv.h>
+#include <openssl/crypto.h>
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000
+#define	OpenSSL_version_num	SSLeay
+#endif
 	]], [[
 	exit(OpenSSL_version_num() == OPENSSL_VERSION_NUMBER ? 0 : 1);
 	]])],

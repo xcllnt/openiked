@@ -41,6 +41,13 @@
 #include <openssl/sha.h>
 #include <openssl/rsa.h>
 
+#if OPENSSL_VERSION_NUMBER < 0x10100000
+#define	X509_OBJECT_get_type(o)		((o)->type)
+#define	X509_OBJECT_get0_X509(o)	((o)->data.x509)
+#define	X509_STORE_get0_objects(s)	((s)->objs)
+#define	X509_STORE_get0_param(s)	((s)->param)
+#endif
+
 #include "iked.h"
 #include "ikev2.h"
 

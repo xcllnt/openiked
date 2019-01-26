@@ -34,6 +34,28 @@
 #include <openssl/x509.h>
 #include <openssl/rsa.h>
 
+#if OPENSSL_VERSION_NUMBER < 0x10100000
+static inline HMAC_CTX *
+HMAC_CTX_new(void)
+{
+	HMAC_CTX *ctx;
+
+	ctx = malloc(sizeof(*ctx));
+	if (ctx != NULL)
+		HMAC_CTX_init(ctx);
+	return (ctx);
+}
+
+static inline void
+HMAC_CTX_free(HMAC_CTX *ctx)
+{
+	if (ctx != NULL) {
+		HMAC_CTX_cleanup(ctx);
+		free(ctx);
+	}
+}
+#endif
+
 #include "iked.h"
 #include "ikev2.h"
 
