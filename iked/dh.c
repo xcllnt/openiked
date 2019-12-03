@@ -440,7 +440,7 @@ dh_create_shared(struct group *group, uint8_t *secret, uint8_t *exchange)
 int
 modp_init(struct group *group)
 {
-	BIGNUM	*g, *p;
+	BIGNUM	*g = 0, *p = 0;
 	DH	*dh;
 
 	dh = DH_new();
